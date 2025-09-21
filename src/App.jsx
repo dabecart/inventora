@@ -1,0 +1,916 @@
+import React, { useEffect, useState, useRef } from "react";
+
+// Single-file React + Tailwind client-only app
+// Replace CLIENT_ID with your Google OAuth Web App Client ID
+// Notes:
+// - Uses Google Identity Services (GIS) token client for OAuth token.
+// - Stores three master JSON files in a Drive folder named "InventoryApp":
+//    - inventory.json   (items with counts and metadata)
+//    - storage.json     (storage units list)
+//    - actions.json     (authoritative list of actions applied to system)
+// - When a client performs actions, they are appended locally and uploaded
+//   as a pending action file (pending_actions_<ts>_<clientId>.json) if collision is detected.
+// - Any client can run a merge process that performs a 3-way merge of actions
+//   (base / ours / theirs) and then re-applies the resulting action list to rebuild
+//   inventory.json and storage.json. Pending action files older than MERGE_DELAY_MS
+//   are merged automatically by the background loop.
+
+const CLIENT_ID = "840716343022-4p7cpk2v1nj32u7s1km6ckq57imuikhe.apps.googleusercontent.com";
+const SCOPES = "openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly";
+const FOLDER_NAME = "InventoraApp";
+const INVENTORY_FILENAME = "inventory.json";
+const STORAGE_FILENAME = "storage.json";
+const PENDING_PREFIX = "pending_actions_";
+const POLL_INTERVAL_MS = 10 * 1000; // 10 seconds
+const MERGE_REMOTE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+// Utility helpers
+function nowIso() { return new Date().toISOString(); }
+function simpleId(existingIds = []) {
+  let id;
+  do {
+    id = Date.now().toString(36) + Math.random().toString(36).slice(2,9);
+  } while (existingIds.includes(id));
+  return id;
+}
+
+export default function InventoryDriveClient() {
+  const [signedIn, setSignedIn] = useState(() => !!localStorage.getItem('accessToken'));
+  const [accessToken, setAccessToken] = useState(() => localStorage.getItem('accessToken'));
+  const [userId, setUserId] = useState(null);
+
+  const [status, setStatus] = useState("Not signed in");
+  const [folderId, setFolderId] = useState(null);
+
+  const [inventory, setInventory] = useState({ version: 0, items: [] });
+  const [storageUnits, setStorageUnits] = useState({ version: 0, units: [] });
+
+  // local pending actions queue (not yet pushed to Drive as pending file)
+  const localPendingActions = useRef([]);
+  const tokenClientRef = useRef(null);
+  // For race conditions when calling ensureFolder.
+  const folderPromiseRef = useRef(null);
+
+  const [mergeLog, setMergeLog] = useState([]);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  // init GIS token client
+  useEffect(() => {
+    function tryInit() {
+      if (window.google && window.google.accounts) {
+        tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPES,
+          callback: (resp) => {
+            if (!resp.hasOwnProperty('error')) {
+              setAccessToken(resp.access_token);
+              setSignedIn(true);
+              setStatus('Signed in!');
+              localStorage.setItem('accessToken', resp.access_token); // Save token
+            }
+          },
+        });
+      } else {
+        setTimeout(tryInit, 500); // retry in 0.5s
+      }
+    }
+    tryInit();
+  }, []);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    (async () => {
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: 'Bearer ' + accessToken }
+      });
+      if (res.ok) {
+        const info = await res.json();
+        setUserId(info.email || info.sub); // Prefer email, fallback to sub
+      }
+    })();
+  }, [accessToken]);
+
+  // When we sign in, try to ensure folder + load files
+  useEffect(() => {
+    if (!signedIn || !accessToken) return;
+    (async () => {
+      setStatus('Ensuring folder...');
+      const fid = await ensureFolder();
+      setFolderId(fid);
+    })().catch(e => {
+      console.error(e);
+      setStatus('Error: ' + e.message);
+    });
+  }, [signedIn, accessToken]);
+
+  useEffect(() => {
+    if (!signedIn || !accessToken || !folderId) return;
+    (async () => {
+      setStatus('Loading master files...');
+      await loadMasters();
+      setStatus('Ready');
+    })().catch(e => {
+      console.error(e);
+      setStatus('Error: ' + e.message);
+    });
+  }, [signedIn, accessToken, folderId]);
+
+  useEffect(() => {
+    if (!signedIn || !accessToken || !folderId) return;
+    function mergeLocalActionsInterval() {
+      // Latest action time.
+      const newestTime = getLatestActionTimeInRemote();
+
+      // Compare with local inventory/storage time
+      const localTime = Math.min(
+        new Date(inventory.time || 0).getTime(),
+        new Date(storageUnits.time || 0).getTime()
+      );
+      const newestTimeMs = new Date(newestTime).getTime();
+
+      if (newestTimeMs > localTime) {
+        if(localPendingActions.current.length == 0) {
+          // If there are no new actions, update the data.
+          mergeLocalActions();
+        }else {
+          setUpdateAvailable(true);
+        }
+      } else {
+        setUpdateAvailable(false);
+      }
+    }
+    const poll = setInterval(async () => {
+      mergeLocalActionsInterval();
+    }, POLL_INTERVAL_MS);
+    
+    // Run once at the start.
+    mergeLocalActionsInterval();
+
+    return () => clearInterval(poll);
+  }, [signedIn, accessToken, folderId, inventory.time, storageUnits.time]);
+
+  // Apply the changes from the "actions" folder into the JSONs.
+  useEffect(() => {
+    if (!signedIn || !accessToken || !folderId) return;
+    const mergeInterval = setInterval(async () => {
+      mergeRemoteActions(MERGE_REMOTE_THRESHOLD_MS);
+    }, POLL_INTERVAL_MS); 
+    return () => clearInterval(mergeInterval);
+  }, [signedIn, accessToken, folderId]);
+
+  // Ask if the user really wants to exit when there are pending actions to be done.
+  useEffect(() => {
+    function handleBeforeUnload(e) {
+      if (localPendingActions.current.length > 0) {
+        e.preventDefault();
+        e.returnValue = ''; // Required for Chrome
+        return '';
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // ---------------- DRIVE helpers using REST + fetch ----------------
+  async function driveFetch(path, opts = {}) {
+    if (!accessToken) throw new Error('No access token');
+    const url = 'https://www.googleapis.com/drive/v3' + path;
+    const headers = opts.headers || {};
+    headers['Authorization'] = 'Bearer ' + accessToken;
+    opts.headers = headers;
+    const res = await fetch(url, opts);
+    if (!res.ok) {
+      const text = await res.text();
+      console.error(`Drive API error ${res.status}: ${text}`);
+      if (res.status === 401 || res.status === 403) {
+        signout();
+        setStatus('Session expired. Please sign in again.');
+      }
+      return null;
+    }
+    return res;
+  }
+
+  async function ensureFolder() {
+    if (folderId) return folderId;
+    if (folderPromiseRef.current) return folderPromiseRef.current;
+
+    folderPromiseRef.current = (async () => {
+      // Search for folder
+      const q = encodeURIComponent(`name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+      const res = await driveFetch(`/files?q=${q}&fields=files(id,name)`);
+      if (res) {
+        const js = await res.json();
+        if (js.files && js.files.length > 0) {
+          setFolderId(js.files[0].id);
+          folderPromiseRef.current = null;
+          return js.files[0].id;
+        }
+      }
+      // Create folder
+      const metadata = { name: FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' };
+      const createRes = await driveFetch('/files?fields=id,name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(metadata)
+      });
+      const createJs = await createRes.json();
+      setFolderId(createJs.id);
+      folderPromiseRef.current = null;
+      return createJs.id;
+    })();
+
+    return folderPromiseRef.current;
+  }
+
+  async function ensureActionsFolder() {
+    await ensureFolder();
+    // Search for actions folder inside main folder
+    const q = encodeURIComponent(`name='actions' and mimeType='application/vnd.google-apps.folder' and '${folderId}' in parents and trashed=false`);
+    const res = await driveFetch(`/files?q=${q}&fields=files(id,name)`);
+    if(res) {
+      const js = await res.json();
+      if (js.files && js.files.length > 0) return js.files[0].id;
+    }
+
+    // Create actions folder
+    const metadata = { name: 'actions', mimeType: 'application/vnd.google-apps.folder', parents: [folderId] };
+    const createRes = await driveFetch('/files?fields=id,name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(metadata)
+    });
+    const createJs = await createRes.json();
+    return createJs.id;
+  }
+
+  async function findFileByNameInFolder(name) {
+    await ensureFolder();
+    const q = encodeURIComponent(`name='${name}' and '${folderId}' in parents and trashed=false`);
+    const res = await driveFetch(`/files?q=${q}&fields=files(id,name,modifiedTime,md5Checksum)`);
+    if (!res) return null;
+
+    const js = await res.json();
+    return (js.files && js.files[0]) || null;
+  }
+
+  async function downloadFileText(fileId) {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    if (!res.ok) throw new Error('Download failed: ' + res.status);
+    return await res.text();
+  }
+
+  async function createFileMultipart(name, parentId, contentObj) {
+    const boundary = '-------314159265358979323846';
+    const metadata = { name, parents: [parentId] };
+    const multipart =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+      JSON.stringify(metadata) + `\r\n` +
+      `--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
+      JSON.stringify(contentObj, null, 2) + `\r\n` +
+      `--${boundary}--`;
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type': 'multipart/related; boundary=' + boundary
+      },
+      body: multipart
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error('createFile failed: ' + res.status + ' ' + txt);
+    }
+    return await res.json();
+  }
+
+  async function updateFileMedia(fileId, contentObj) {
+    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,modifiedTime`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(contentObj, null, 2)
+    });
+    if (!res.ok) { const txt = await res.text(); throw new Error('update failed: ' + res.status + ' ' + txt); }
+    return await res.json();
+  }
+
+  async function deleteFile(fileId) { 
+    await driveFetch(`/files/${fileId}`, { method: 'DELETE' }); 
+  }
+
+  // ---------------- Loading masters ----------------
+  async function loadMasters() {
+    // inventory
+    const invFile = await findFileByNameInFolder(INVENTORY_FILENAME);
+    if (!invFile) {
+      const initial = { version: 1, items: [], time: nowIso() };
+      await createFileMultipart(INVENTORY_FILENAME, folderId, initial);
+      setInventory(initial);
+    } else {
+      const txt = await downloadFileText(invFile.id);
+      try { 
+        setInventory(JSON.parse(txt)); 
+      } catch(e) { 
+        setInventory({ version: 1, items: [], time: nowIso() }); 
+      }
+    }
+
+    // storage
+    const storFile = await findFileByNameInFolder(STORAGE_FILENAME);
+    if (!storFile) {
+      const initial = { version: 1, units: [], time: nowIso() };
+      await createFileMultipart(STORAGE_FILENAME, folderId, initial);
+      setStorageUnits(initial);
+    } else {
+      const txt = await downloadFileText(storFile.id);
+      try { 
+        setStorageUnits(JSON.parse(txt)); 
+      } catch(e) { 
+        setStorageUnits({ version: 1, units: [], time: nowIso() }); 
+      }
+    }
+  }
+
+  // ---------------- Action model & applying ----------------
+  // Define allowed action types and their payload shape
+  // Each action has: id, type, payload, createdAt, actorId
+  // Types: 
+  //  - create_item
+  //  - delete_item
+  //  - create_storage
+  //  - delete_storage
+  //  - add_count
+  //  - subtract_count
+  //  - move_item
+
+  function applyActionsToState(actionList, initialInv = { items: [] }, initialStor = { units: [] }) {
+    // Start from initial state
+    const inv = { items: new Map((initialInv.items || []).map(it => [it.id, { ...it }])) };
+    const stores = { units: new Map((initialStor.units || []).map(u => [u.id, { ...u }])) };
+
+    // Sort by createdAt then by id for deterministic order
+    const sorted = [...actionList].sort((a,b) => {
+      const ta = new Date(a.createdAt).getTime();
+      const tb = new Date(b.createdAt).getTime();
+      if (ta !== tb) return ta - tb;
+      return a.id.localeCompare(b.id);
+    });
+
+    for (const act of sorted) {
+      const p = act.payload || {};
+      switch (act.type) {
+        case 'create_item': {
+          if (!p.id) break;
+          inv.items.set(p.id, { id: p.id, name: p.name || 'Item', qty: Number(p.initialQty || 0), meta: p.meta || {}, storageUnitId: p.storageUnitId || null });
+          break;
+        }
+        case 'delete_item': {
+          if (!p.id) break;
+          inv.items.delete(p.id);
+          break;
+        }
+        case 'create_storage': {
+          if (!p.id) break;
+          stores.units.set(p.id, { id: p.id, name: p.name || 'Storage', meta: p.meta || {} });
+          break;
+        }
+        case 'delete_storage': {
+          if (!p.id) break;
+          stores.units.delete(p.id);
+          for (const it of inv.items.values()) {
+            if (it.storageUnitId === p.id) it.storageUnitId = null;
+          }
+          break;
+        }
+        case 'add_count': {
+          if (!p.id) break;
+          const it = inv.items.get(p.id);
+          if (!it) break;
+          it.qty = (Number(it.qty || 0) + Number(p.amount || 0));
+          break;
+        }
+        case 'subtract_count': {
+          if (!p.id) break;
+          const it = inv.items.get(p.id);
+          if (!it) break;
+          it.qty = (Number(it.qty || 0) - Number(p.amount || 0));
+          break;
+        }
+        case 'move_item': {
+          if (!p.id) break;
+          const it = inv.items.get(p.id);
+          if (!it) break;
+          it.storageUnitId = p.toStorageId || null;
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    const finalInv = { version: 0, items: Array.from(inv.items.values()) };
+    const finalStor = { version: 0, units: Array.from(stores.units.values()) };
+    return { finalInv, finalStor };
+  }
+
+  // ---------------- Creating actions locally ----------------
+  function enqueueAction(type, payload) {
+    const action = { id: `a-${simpleId()}`, type, payload, createdAt: nowIso(), actorId: userId };
+    localPendingActions.current.push(action);
+    setMergeLog(l => [`Enqueued ${type} ${action.id}`, ...l].slice(0,200));
+  }
+
+  async function pushLocalPending() {
+    if (!localPendingActions.current.length) return;
+    const actionsFolderId = await ensureActionsFolder();
+
+    // Use ISO time for filename and json field
+    const pushTime = nowIso();
+    const filename = `actions_${pushTime.replace(/[:.]/g, "-")}.json`;
+    const actionsPayload = { time: pushTime, actions: localPendingActions.current.slice() };
+
+    // Upload actions file
+    await createFileMultipart(filename, actionsFolderId, actionsPayload);
+
+    localPendingActions.current = [];
+    setMergeLog(l => [`Pushed actions to ${filename}`, ...l]);
+  }
+
+  // ---------------- Remote actions ----------------
+  async function getLatestActionTimeInRemote() {
+      const actionsFolderId = await ensureActionsFolder();
+      // List all actions files
+      const q = encodeURIComponent(`'${actionsFolderId}' in parents and trashed=false and name contains 'actions_'`);
+      const res = await driveFetch(`/files?q=${q}&fields=files(id,name,modifiedTime)`);
+      if (!res) return null;
+      const js = await res.json();
+      const files = js.files || [];
+      if (!files.length) return null;
+
+      // Download times from all actions files
+      let times = [];
+      for (const f of files) {
+        try {
+          const txt = await downloadFileText(f.id);
+          const json = JSON.parse(txt);
+          if (json.time) times.push(json.time);
+        } catch {}
+      }
+      if (!times.length) return null;
+      times.sort(); // ISO sort, oldest first
+      return times[times.length - 1];
+  }
+
+  async function getRemoteActionsAfter(timeIso) {
+    const actionsFolderId = await ensureActionsFolder();
+    // List action files.
+    const q = encodeURIComponent(`'${actionsFolderId}' in parents and trashed=false and name contains 'actions_'`);
+    const res = await driveFetch(`/files?q=${q}&fields=files(id,name)`);
+    if (!res) return [];
+    const js = await res.json();
+    const files = js.files || [];
+    let actions = [];
+    for (const f of files) {
+      try {
+        const txt = await downloadFileText(f.id);
+        const json = JSON.parse(txt);
+        if (json.time && new Date(json.time) > new Date(timeIso)) {
+          if (json.actions) actions = actions.concat(json.actions);
+        }
+      } catch {}
+    }
+    return actions;
+  }
+
+  async function mergeLocalActions() {
+    // Use the latest time from local inventory/storage
+    const localTime = Math.max(
+      new Date(inventory.time || 0).getTime(),
+      new Date(storageUnits.time || 0).getTime()
+    );
+    const actions = await getRemoteActionsAfter(new Date(localTime).toISOString());
+    if (!actions.length) return;
+    const { finalInv, finalStor } = applyActionsToState(actions);
+    setInventory(prev => ({ ...prev, ...finalInv }));
+    setStorageUnits(prev => ({ ...prev, ...finalStor }));
+    setMergeLog(l => [`Merged ${actions.length} remote actions into local state`, ...l]);
+  }
+
+  async function mergeRemoteActions(thresholdMs = MERGE_REMOTE_THRESHOLD_MS) {
+    // Download current inventory and storage
+    const invFile = await findFileByNameInFolder(INVENTORY_FILENAME);
+    let lastUpdateTime = null;
+    let initialInv = { items: [] };
+    if (invFile) {
+      const txt = await downloadFileText(invFile.id);
+      try {
+        const invJson = JSON.parse(txt);
+        lastUpdateTime = invJson.time || null;
+        initialInv = invJson;
+      } catch {}
+    }
+    if (!lastUpdateTime) lastUpdateTime = new Date(0).toISOString();
+
+    const storFile = await findFileByNameInFolder(STORAGE_FILENAME);
+    let initialStor = { units: [] };
+    if (storFile) {
+      const txt = await downloadFileText(storFile.id);
+      try {
+        initialStor = JSON.parse(txt);
+      } catch {}
+    }
+
+    // Fetch all actions after lastUpdateTime
+    const actionsFolderId = await ensureActionsFolder();
+    const q = encodeURIComponent(`'${actionsFolderId}' in parents and trashed=false and name contains 'actions_'`);
+    const res = await driveFetch(`/files?q=${q}&fields=files(id,name)`);
+    let jsonTimes = [];
+
+    if (!res) return;
+    const js = await res.json();
+    const files = js.files || [];
+    let actionsToApply = [];
+    for (const f of files) {
+      try {
+        const txt = await downloadFileText(f.id);
+        const json = JSON.parse(txt);
+        if (
+          json.time &&
+          new Date(json.time) > new Date(lastUpdateTime) &&
+          (Date.now() - new Date(json.time).getTime()) > thresholdMs
+        ) {
+          if (json.actions) actionsToApply = actionsToApply.concat(json.actions);
+          jsonTimes.push(json.time);
+        }
+      } catch {}
+    }
+    if (!actionsToApply.length) return;
+
+    // Apply actions to initial state
+    const { finalInv, finalStor } = applyActionsToState(actionsToApply, initialInv, initialStor);
+    jsonTimes.sort();
+    const mergeTime = jsonTimes[jsonTimes.length - 1] || nowIso();
+    finalInv.time = mergeTime;
+    finalStor.time = mergeTime;
+
+    // Save to Drive
+    if (invFile) {
+      await updateFileMedia(invFile.id, finalInv);
+    } else {
+      await createFileMultipart(INVENTORY_FILENAME, folderId, finalInv);
+    }
+    if (storFile) {
+      await updateFileMedia(storFile.id, finalStor);
+    } else {
+      await createFileMultipart(STORAGE_FILENAME, folderId, finalStor);
+    }
+    setInventory(finalInv);
+    setStorageUnits(finalStor);
+    setMergeLog(l => [`Merged ${actionsToApply.length} remote actions into Drive after inactivity`, ...l]);
+  }
+
+  // ---------------- UI helpers for creating actions ----------------
+  function handleCreateItem(name, initialQty, storageUnitId) {
+    const allIds = [
+      ...(inventory.items || []).map(it => it.id)
+    ];
+    const id = `i-${simpleId(allIds)}`;
+    enqueueAction('create_item', { id, name, initialQty: Number(initialQty || 0), storageUnitId });
+    setMergeLog(l => [`Enqueued create_item ${id}`, ...l]);
+    // Update local inventory state immediately
+    setInventory(prev => ({
+      ...prev,
+      items: [...(prev.items || []), { id, name, qty: Number(initialQty || 0), meta: {}, storageUnitId }]
+    }));
+  }
+
+  function handleDeleteItem(id) { 
+    enqueueAction('delete_item', { id }); 
+    setMergeLog(l => [`Enqueued delete_item ${id}`, ...l]);
+    // Update local inventory state immediately
+    setInventory(prev => ({
+      ...prev,
+      items: (prev.items || []).filter(it => it.id !== id)
+    }));
+  }
+
+  function handleCreateStorage(name) { 
+    const allIds = [
+      ...(storageUnits.units || []).map(it => it.id)
+    ];
+
+    const id = `s-${simpleId(allIds)}`;
+    enqueueAction('create_storage', { id, name }); 
+    setMergeLog(l => [`Enqueued create_storage ${id}`, ...l]);
+    // Update local storageUnits state immediately
+    setStorageUnits(prev => ({
+      ...prev,
+      units: [...(prev.units || []), { id, name, meta: {} }]
+    }));
+  }
+
+  function handleDeleteStorage(id) { 
+    enqueueAction('delete_storage', { id }); 
+    setMergeLog(l => [`Enqueued delete_storage ${id}`, ...l]);
+    // Update local storageUnits state immediately
+    setStorageUnits(prev => ({
+      ...prev,
+      units: (prev.units || []).filter(u => u.id !== id)
+    }));
+    // Optionally, unassign items referencing this storage
+    setInventory(prev => ({
+      ...prev,
+      items: (prev.items || []).map(it => it.storageUnitId === id ? { ...it, storageUnitId: null } : it)
+    }));
+  }
+
+  function handleAddCount(id, amount) {
+    enqueueAction('add_count', { id, amount: Number(amount) });
+    setMergeLog(l => [`Enqueued add_count ${id} +${amount}`, ...l]);
+    // Update local inventory state immediately
+    setInventory(prev => ({
+      ...prev,
+      items: (prev.items || []).map(it => it.id === id ? { ...it, qty: Number(it.qty || 0) + Number(amount) } : it)
+    }));
+  }
+
+  function handleSubtractCount(id, amount) {
+    enqueueAction('subtract_count', { id, amount: Number(amount) });
+    setMergeLog(l => [`Enqueued subtract_count ${id} -${amount}`, ...l]);
+    // Update local inventory state immediately
+    setInventory(prev => ({
+      ...prev,
+      items: (prev.items || []).map(it => it.id === id ? { ...it, qty: Number(it.qty || 0) - Number(amount) } : it)
+    }));
+  }
+
+  function handleMoveItem(id, toStorageId) {
+    enqueueAction('move_item', { id, toStorageId });
+    setMergeLog(l => [`Enqueued move_item ${id} -> ${toStorageId}`, ...l]);
+    // Update local inventory state immediately
+    setInventory(prev => ({
+      ...prev,
+      items: (prev.items || []).map(it => it.id === id ? { ...it, storageUnitId: toStorageId } : it)
+    }));
+  }
+
+  // ---------------- UI actions: sign-in, push pending, manual merge ----------------
+  function signout() {
+    setAccessToken(null);
+    setSignedIn(false);
+    setStatus('Not signed in');
+    localStorage.removeItem('accessToken');
+  }
+  
+  function handleAuthButton() {
+    if (signedIn) {
+      signout();
+    } else {
+      if (!tokenClientRef.current) throw new Error('Token client not initialized');
+      tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
+    }
+  }
+
+  async function manualPush() {
+    setStatus('Pushing local pending...');
+    try { 
+      await pushLocalPending(); 
+      setStatus('Push done'); 
+    } catch (e) { 
+      setStatus('Push failed: ' + e.message); 
+    }
+  }
+
+  async function manualMerge() {
+    setStatus('Merge actions pending...');
+    try { 
+      await mergeRemoteActions(0); 
+      setStatus('Merge done'); 
+    } catch (e) { 
+      setStatus('Merge failed: ' + e.message); 
+    }
+  }
+
+  // ---------------- Render UI ----------------
+  return (
+    <div className="p-6 max-w-5xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">Inventora</h1>
+      <div className="mb-4">
+        <button onClick={handleAuthButton} className="px-3 py-1 rounded bg-blue-600 text-white mr-2">
+          {signedIn ? 'Log out' : 'Sign in'}
+        </button>
+        <button onClick={manualPush} className="px-3 py-1 rounded bg-green-600 text-white mr-2">Push</button>
+        <button onClick={manualMerge} className="px-3 py-1 rounded bg-orange-600 text-white mr-2">Merge</button>
+        <span className="ml-4 text-sm text-gray-600">Status: {status}</span>
+      </div>
+
+      {updateAvailable && (
+        <div className="mt-4 p-4 bg-yellow-200 border border-yellow-600 rounded">
+          <div className="font-bold text-yellow-800 mb-2">New actions detected!</div>
+          <div className="mb-2 text-yellow-800">There are new actions in the database since your last update. Reload inventory and storage?</div>
+          <button
+            className="px-3 py-1 rounded bg-yellow-600 text-white mr-2"
+            onClick={async () => {
+              // Ask user if they want to keep local pending actions
+              if (localPendingActions.current.length > 0) {
+                if (!window.confirm("You have unsaved local actions. Do you want to discard them and reload?")) return;
+                localPendingActions.current = [];
+              }
+              await loadMasters();
+              setUpdateAvailable(false);
+              setMergeLog(l => ["Reloaded inventory and storage from Drive", ...l]);
+            }}
+          >
+            Reload Inventory & Storage
+          </button>
+        </div>
+      )}
+
+      <div className="mt-6 p-4 border rounded">
+        <h2 className="font-semibold">Items</h2>
+        <ItemCreator storageUnits={storageUnits.units || []} onCreate={handleCreateItem} />
+        <table className="w-full mt-3 table-auto text-sm">
+          <thead>
+            <tr className="text-left">
+              <th>Name</th>
+              <th>Qty</th>
+              <th>Storage</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(inventory.items || []).map(it => {
+              // Find storage name by id
+              const storage = (storageUnits.units || []).find(u => u.id === it.storageUnitId);
+              return (
+                <tr key={it.id} className="border-t">
+                  <td>{it.name}</td>
+                  <td>{it.qty}</td>
+                  <td>
+                    <select
+                      value={it.storageUnitId || ''}
+                      onChange={e => handleMoveItem(it.id, e.target.value || null)}
+                      className="px-2 py-1 border rounded bg-gray-500"
+                    >
+                      <option value="" className="bg-gray-500">(no storage)</option>
+                      {(storageUnits.units || []).map(u =>
+                        <option key={u.id} value={u.id} className="bg-gray-500">{u.name}</option>
+                      )}
+                    </select>
+                  </td>
+                  <td className="space-x-2">
+                    <button onClick={() => handleAddCount(it.id, 1)} className="m-1 px-2 py-1 rounded bg-green-600 text-white text-xs">+1</button>
+                    <button onClick={() => handleSubtractCount(it.id, 1)} className="m-1 px-2 py-1 rounded bg-orange-500 text-white text-xs">-1</button>
+                    <button onClick={() => handleDeleteItem(it.id)} className="m-1 px-2 py-1 rounded bg-red-600 text-white text-xs">Delete</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-6 p-4 border rounded">
+        <h2 className="font-semibold">Storage Units</h2>
+        <StorageUnitCreator onCreate={handleCreateStorage} existingNames={(storageUnits.units || []).map(u => u.name)} />
+        <ul className="mt-3">
+          {storageUnits.units && storageUnits.units.length ? 
+            storageUnits.units.map(u => (
+              <li key={u.id} className="flex justify-between items-center py-1 border-b">
+                <div>{u.name} <span className="text-xs text-gray-500">({u.id})</span></div>
+                <div className="space-x-2">
+                  <button onClick={() => handleDeleteStorage(u.id)} className="px-2 py-1 rounded bg-red-500 text-white text-sm">Delete</button>
+                </div>
+              </li>
+            )) 
+            : 
+            <li className="text-sm text-gray-500">No storage units</li>
+          }
+        </ul>
+      </div>
+
+      <div className="mt-6 p-4 border rounded">
+        <h3 className="font-semibold">Local pending actions</h3>
+        <pre className="text-xs max-h-40 overflow-auto bg-gray-500 p-2">{JSON.stringify(localPendingActions.current, null, 2)}</pre>
+      </div>
+
+      <div className="mt-6 p-4 border rounded">
+        <h3 className="font-semibold">Merge Log</h3>
+        <div className="text-xs max-h-40 overflow-auto bg-gray-500 p-2">
+          {mergeLog.map((l, i) => <div key={i}>{l}</div>)}
+        </div>
+      </div>
+
+      <div className="mt-6 text-sm text-gray-600">
+        <p>User: {userId || '(anonymous)'}</p>      
+      </div>
+    </div>
+  );
+}
+
+function StorageUnitCreator({ onCreate, existingNames }) {
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+
+  function handleCreate() {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError('Storage name cannot be empty.');
+      return;
+    }
+    if (existingNames.some(n => n.toLowerCase() === trimmed.toLowerCase())) {
+      setError('Storage name already exists.');
+      return;
+    }
+    onCreate(trimmed);
+    setName('');
+    setError('');
+  }
+
+  return (
+    <div className="flex gap-2 items-center">
+      <input
+        value={name}
+        onChange={e => { setName(e.target.value); setError(''); }}
+        placeholder="Storage name"
+        className="px-2 py-1 border rounded flex-1"
+        onKeyDown={e => { if (e.key === 'Enter') handleCreate(); }}
+      />
+      <button
+        onClick={handleCreate}
+        disabled={!name.trim() || existingNames.some(n => n === name.trim())}
+        className={`px-3 py-1 rounded text-white
+          ${!name.trim() || existingNames.some(n => n === name.trim()) ? 'bg-gray-400' : 'bg-blue-600'}`}
+      >
+        Create
+      </button>
+      {error && <span className="text-red-600 text-xs ml-2">{error}</span>}
+    </div>
+  );
+}
+
+function ItemCreator({ storageUnits, onCreate }) {
+  const [name, setName] = useState('');
+  const [qty, setQty] = useState(0);
+  const [storageId, setStorageId] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (storageUnits && storageUnits.length) setStorageId(storageUnits[0].id || '');
+  }, [storageUnits]);
+
+  function handleCreate() {
+    if (!name.trim()) {
+      setError('Item name cannot be empty.');
+      return;
+    }
+    // Optionally, require storage selection (remove this check if not needed)
+    // if (!storageId) {
+    //   setError('Please select a storage unit.');
+    //   return;
+    // }
+    onCreate(name.trim(), qty, storageId || null);
+    setName('');
+    setQty(0);
+    setError('');
+  }
+
+  return (
+    <div className="flex gap-2 items-center">
+      <input
+        value={name}
+        onChange={e => { setName(e.target.value); setError(''); }}
+        placeholder="Item name"
+        className="px-2 py-1 border rounded"
+        onKeyDown={e => { if (e.key === 'Enter') handleCreate(); }}
+      />
+      <input
+        type="number"
+        value={qty}
+        onChange={e => setQty(e.target.value)}
+        className="w-20 px-2 py-1 border rounded"
+      />
+      <select
+        value={storageId}
+        onChange={e => setStorageId(e.target.value)}
+        className="px-2 py-1 border rounded"
+      >
+        <option value="">(no storage)</option>
+        {(storageUnits || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+      </select>
+      <button
+        onClick={handleCreate}
+        disabled={!name.trim()}
+        className={`px-3 py-1 rounded ${!name.trim() ? 'bg-gray-400' : 'bg-green-600'} text-white`}
+      >
+        Create
+      </button>
+      {error && <span className="text-red-600 text-xs ml-2">{error}</span>}
+    </div>
+  );
+}
