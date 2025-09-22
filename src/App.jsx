@@ -25,13 +25,7 @@ const MERGE_REMOTE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 // Utility helpers
 function nowIso() { return new Date().toISOString(); }
-function simpleId(existingIds = []) {
-  let id;
-  do {
-    id = Date.now().toString(36) + Math.random().toString(36).slice(2,9);
-  } while (existingIds.includes(id));
-  return id;
-}
+function simpleId() { return Date.now().toString(36) + Math.random().toString(36).slice(2,9); }
 function filenameTimeToIso(str) {
   // "2025-09-22T08-45-01-964Z" -> "2025-09-22T08:45:01.964Z"
   return str.replace(
@@ -353,11 +347,69 @@ export default function InventoraClient() {
   // Types: 
   //  - create_item
   //  - delete_item
+  //  - rename_item
   //  - create_storage
   //  - delete_storage
+  //  - rename_storage
+  //  - set_quantity
   //  - add_count
   //  - subtract_count
   //  - move_item
+
+  function validateAction(action, inventory, storageUnits) {
+    const p = action.payload || {};
+    switch (action.type) {
+      case 'create_item': {
+        // id must be unique
+        if ((inventory.items || []).some(it => it.id === p.id)) return false;
+        if (p.initialQty < 0) return false;
+        if (p.storageUnitId && !(storageUnits.units || []).some(u => u.id === p.storageUnitId)) return false;
+        return true;
+      }
+
+      case 'delete_item': {
+        return (inventory.items || []).some(it => it.id === p.id);
+      }
+
+      case 'create_storage': {
+        return !(storageUnits.units || []).some(u => u.id === p.id);
+      }
+
+      case 'delete_storage': {
+        return (storageUnits.units || []).some(u => u.id === p.id);
+      }
+
+      case 'add_count': {
+        return (inventory.items || []).some(it => it.id === p.id && p.amount > 0);
+      }
+
+      case 'subtract_count': {
+        const it = (inventory.items || []).find(it => it.id === p.id);
+        return it && p.amount > 0 && it.qty >= p.amount;
+      }
+
+      case 'move_item': {
+        const it = (inventory.items || []).find(it => it.id === p.id);
+        if (!it) return false;
+        if (p.toStorageId && !(storageUnits.units || []).some(u => u.id === p.toStorageId)) return false;
+        return true;
+      }
+
+      case 'rename_item': {
+        return (inventory.items || []).some(it => it.id === p.id) && !!p.name.trim();
+      }
+
+      case 'set_quantity': {
+        return (inventory.items || []).some(it => it.id === p.id) && p.qty >= 0;
+      }
+
+      case 'rename_storage': {
+        return (storageUnits.units || []).some(u => u.id === p.id) && !!p.name.trim();
+      }
+
+      default: return false;
+    }
+  }
 
   function applyActionsToState(actionList, initialInv = { items: [] }, initialStor = { units: [] }) {
     // Start from initial state
@@ -402,14 +454,14 @@ export default function InventoraClient() {
           if (!p.id) break;
           const it = inv.items.get(p.id);
           if (!it) break;
-          it.qty = (Number(it.qty || 0) + Number(p.amount || 0));
+          it.qty = Math.max(0, Number(it.qty || 0) + Number(p.amount || 0)); // Clamp to >= 0
           break;
         }
         case 'subtract_count': {
           if (!p.id) break;
           const it = inv.items.get(p.id);
           if (!it) break;
-          it.qty = (Number(it.qty || 0) - Number(p.amount || 0));
+          it.qty = Math.max(0, Number(it.qty || 0) - Number(p.amount || 0)); // Clamp to >= 0
           break;
         }
         case 'move_item': {
@@ -417,6 +469,21 @@ export default function InventoraClient() {
           const it = inv.items.get(p.id);
           if (!it) break;
           it.storageUnitId = p.toStorageId || null;
+          break;
+        }
+        case 'rename_item': {
+          const it = inv.items.get(p.id);
+          if (it && p.name) it.name = p.name;
+          break;
+        }
+        case 'set_quantity': {
+          const it = inv.items.get(p.id);
+          if (it) it.qty = Math.max(0, Number(p.qty) || 0);
+          break;
+        }
+        case 'rename_storage': {
+          const st = stores.units.get(p.id);
+          if (st && p.name) st.name = p.name;
           break;
         }
         default:
@@ -430,10 +497,14 @@ export default function InventoraClient() {
   }
 
   // ---------------- Creating actions locally ----------------
-  function enqueueAction(type, payload) {
-    const action = { id: `a-${simpleId()}`, type, payload, createdAt: nowIso(), actorId: userId };
+  function createAction(type, payload) {
+    return { id: `a-${simpleId()}`, type, payload, createdAt: nowIso(), actorId: userId };
+  }
+
+  function enqueueAction(action) {
     localPendingActions.current.push(action);
-    setMergeLog(l => [`Enqueued ${type} ${action.id}`, ...l].slice(0,200));
+    setMergeLog(l => [`Enqueued ${action.type} ${action.id}`, ...l].slice(0,200));
+    return action;
   }
 
   async function pushLocalPending() {
@@ -584,87 +655,102 @@ export default function InventoraClient() {
 
   // ---------------- UI helpers for creating actions ----------------
   function handleCreateItem(name, initialQty, storageUnitId) {
-    const allIds = [
-      ...(inventory.items || []).map(it => it.id)
-    ];
-    const id = `i-${simpleId(allIds)}`;
-    enqueueAction('create_item', { id, name, initialQty: Number(initialQty || 0), storageUnitId });
-    setMergeLog(l => [`Enqueued create_item ${id}`, ...l]);
-    // Update local inventory state immediately
-    setInventory(prev => ({
-      ...prev,
-      items: [...(prev.items || []), { id, name, qty: Number(initialQty || 0), meta: {}, storageUnitId }]
-    }));
+    const id = `i-${simpleId()}`;
+    const payload = { id, name, initialQty: Number(initialQty || 0), storageUnitId };
+    const action = createAction('create_item', payload);
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setInventory(finalInv);
   }
 
-  function handleDeleteItem(id) { 
-    enqueueAction('delete_item', { id }); 
-    setMergeLog(l => [`Enqueued delete_item ${id}`, ...l]);
-    // Update local inventory state immediately
-    setInventory(prev => ({
-      ...prev,
-      items: (prev.items || []).filter(it => it.id !== id)
-    }));
+  function handleDeleteItem(id) {
+    const action = createAction('delete_item', { id });
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setInventory(finalInv);
   }
 
-  function handleCreateStorage(name) { 
-    const allIds = [
-      ...(storageUnits.units || []).map(it => it.id)
-    ];
+  function handleRenameItem(id, newName) {
+    const action = createAction('rename_item', { id, name: newName });
+    if (!validateAction(action, inventory, storageUnits)) return;
 
-    const id = `s-${simpleId(allIds)}`;
-    enqueueAction('create_storage', { id, name }); 
-    setMergeLog(l => [`Enqueued create_storage ${id}`, ...l]);
-    // Update local storageUnits state immediately
-    setStorageUnits(prev => ({
-      ...prev,
-      units: [...(prev.units || []), { id, name, meta: {} }]
-    }));
+    const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setInventory(finalInv);
   }
 
-  function handleDeleteStorage(id) { 
-    enqueueAction('delete_storage', { id }); 
-    setMergeLog(l => [`Enqueued delete_storage ${id}`, ...l]);
-    // Update local storageUnits state immediately
-    setStorageUnits(prev => ({
-      ...prev,
-      units: (prev.units || []).filter(u => u.id !== id)
-    }));
-    // Optionally, unassign items referencing this storage
-    setInventory(prev => ({
-      ...prev,
-      items: (prev.items || []).map(it => it.storageUnitId === id ? { ...it, storageUnitId: null } : it)
-    }));
+  function handleCreateStorage(name) {
+    const id = `s-${simpleId()}`;
+    const payload = { id, name };
+    const action = createAction('create_storage', payload);
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setStorageUnits(finalStor);
+  }
+
+  function handleDeleteStorage(id) {
+    const action = createAction('delete_storage', { id });
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalInv, finalStor } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setStorageUnits(finalStor);
+    setInventory(finalInv);
+  }
+
+  function handleRenameStorage(id, newName) {
+    const action = createAction('rename_storage', { id, name: newName });
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setStorageUnits(finalStor);
+  }
+
+  function handleSetQuantity(id, qty) {
+    const amount = Math.max(0, Number(qty) || 0);
+    const action = createAction('set_quantity', { id, qty: amount });
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setInventory(finalInv);
   }
 
   function handleAddCount(id, amount) {
-    enqueueAction('add_count', { id, amount: Number(amount) });
-    setMergeLog(l => [`Enqueued add_count ${id} +${amount}`, ...l]);
-    // Update local inventory state immediately
-    setInventory(prev => ({
-      ...prev,
-      items: (prev.items || []).map(it => it.id === id ? { ...it, qty: Number(it.qty || 0) + Number(amount) } : it)
-    }));
+    const payload = { id, amount: Number(amount) };
+    const action = createAction('add_count', payload);
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setInventory(finalInv);
   }
 
   function handleSubtractCount(id, amount) {
-    enqueueAction('subtract_count', { id, amount: Number(amount) });
-    setMergeLog(l => [`Enqueued subtract_count ${id} -${amount}`, ...l]);
-    // Update local inventory state immediately
-    setInventory(prev => ({
-      ...prev,
-      items: (prev.items || []).map(it => it.id === id ? { ...it, qty: Number(it.qty || 0) - Number(amount) } : it)
-    }));
+    const payload = { id, amount: Number(amount) };
+    const action = createAction('subtract_count', payload);
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setInventory(finalInv);
   }
 
   function handleMoveItem(id, toStorageId) {
-    enqueueAction('move_item', { id, toStorageId });
-    setMergeLog(l => [`Enqueued move_item ${id} -> ${toStorageId}`, ...l]);
-    // Update local inventory state immediately
-    setInventory(prev => ({
-      ...prev,
-      items: (prev.items || []).map(it => it.id === id ? { ...it, storageUnitId: toStorageId } : it)
-    }));
+    const payload = { id, toStorageId };
+    const action = createAction('move_item', payload);
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setInventory(finalInv);
   }
 
   // ---------------- UI actions: sign-in, push pending, manual merge ----------------
@@ -708,13 +794,15 @@ export default function InventoraClient() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">Inventora</h1>
-      <div className="mb-4">
+      <div className="mb-4 flex">
         <button onClick={handleAuthButton} className="px-3 py-1 rounded bg-blue-600 text-white mr-2">
           {signedIn ? 'Log out' : 'Sign in'}
         </button>
         <button onClick={manualPush} className="px-3 py-1 rounded bg-green-600 text-white mr-2">Push</button>
-        <button onClick={manualMerge} className="px-3 py-1 rounded bg-orange-600 text-white mr-2">Merge</button>
-        <span className="ml-4 text-sm text-gray-600">Status: {status}</span>
+        <div className="ml-4 text-sm text-gray-600 flex flex-col grow items-end">
+          <p>User: {userId || '(anonymous)'}</p>      
+          <span>Status: {status}</span>
+        </div>
       </div>
 
       {updateAvailable && (
@@ -757,8 +845,23 @@ export default function InventoraClient() {
               const storage = (storageUnits.units || []).find(u => u.id === it.storageUnitId);
               return (
                 <tr key={it.id} className="border-t">
-                  <td>{it.name}</td>
-                  <td>{it.qty}</td>
+                <td title={it.id}>
+                  <input
+                    type="text"
+                    value={it.name}
+                    onChange={e => handleRenameItem(it.id, e.target.value)}
+                    className="px-1 py-0.5 border rounded text-sm bg-gray-500"
+                  />
+                </td>
+                <td title={`Qty ID: ${it.id}`}>
+                  <input
+                    type="number"
+                    min="0"
+                    value={it.qty}
+                    onChange={e => handleSetQuantity(it.id, e.target.value)}
+                    className="w-20 px-1 py-0.5 border rounded text-sm bg-gray-500"
+                  />
+                </td>
                   <td>
                     <select
                       value={it.storageUnitId || ''}
@@ -773,7 +876,13 @@ export default function InventoraClient() {
                   </td>
                   <td className="space-x-2">
                     <button onClick={() => handleAddCount(it.id, 1)} className="m-1 px-2 py-1 rounded bg-green-600 text-white text-xs">+1</button>
-                    <button onClick={() => handleSubtractCount(it.id, 1)} className="m-1 px-2 py-1 rounded bg-orange-500 text-white text-xs">-1</button>
+                    <button
+                      onClick={() => handleSubtractCount(it.id, 1)}
+                      className="m-1 px-2 py-1 rounded bg-orange-500 text-white text-xs"
+                      disabled={it.qty === 0} // <-- Disable if qty is zero
+                    >
+                      -1
+                    </button>
                     <button onClick={() => handleDeleteItem(it.id)} className="m-1 px-2 py-1 rounded bg-red-600 text-white text-xs">Delete</button>
                   </td>
                 </tr>
@@ -790,7 +899,15 @@ export default function InventoraClient() {
           {storageUnits.units && storageUnits.units.length ? 
             storageUnits.units.map(u => (
               <li key={u.id} className="flex justify-between items-center py-1 border-b">
-                <div>{u.name} <span className="text-xs text-gray-500">({u.id})</span></div>
+              <div title={u.id}>
+                <input
+                  type="text"
+                  value={u.name}
+                  onChange={e => handleRenameStorage(u.id, e.target.value)}
+                  className="px-1 py-0.5 border rounded text-sm bg-gray-500"
+                />
+                <span className="text-xs text-gray-500 ml-1">({u.id})</span>
+              </div>
                 <div className="space-x-2">
                   <button onClick={() => handleDeleteStorage(u.id)} className="px-2 py-1 rounded bg-red-500 text-white text-sm">Delete</button>
                 </div>
@@ -802,20 +919,25 @@ export default function InventoraClient() {
         </ul>
       </div>
 
-      <div className="mt-6 p-4 border rounded">
-        <h3 className="font-semibold">Local pending actions</h3>
-        <pre className="text-xs max-h-40 overflow-auto bg-gray-500 p-2">{JSON.stringify(localPendingActions.current, null, 2)}</pre>
-      </div>
+      <div className="mt-6 border rounded">
+        <details>
+          <summary className="cursor-pointer px-4 py-2 bg-gray-600 font-semibold">Debug</summary>
+          <div className="p-4 space-y-4">
+            <button onClick={manualMerge} className="px-3 py-1 rounded bg-orange-600 text-white">Manual Merge</button>
 
-      <div className="mt-6 p-4 border rounded">
-        <h3 className="font-semibold">Merge Log</h3>
-        <div className="text-xs max-h-40 overflow-auto bg-gray-500 p-2">
-          {mergeLog.map((l, i) => <div key={i}>{l}</div>)}
-        </div>
-      </div>
+            <div>
+              <h3 className="font-semibold">Local pending actions</h3>
+              <pre className="text-xs max-h-40 overflow-auto bg-gray-500 p-2">{JSON.stringify(localPendingActions.current, null, 2)}</pre>
+            </div>
 
-      <div className="mt-6 text-sm text-gray-600">
-        <p>User: {userId || '(anonymous)'}</p>      
+            <div>
+              <h3 className="font-semibold">Merge Log</h3>
+              <div className="text-xs max-h-40 overflow-auto bg-gray-500 p-2">
+                {mergeLog.map((l, i) => <div key={i}>{l}</div>)}
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   );
