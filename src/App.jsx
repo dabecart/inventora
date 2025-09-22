@@ -20,7 +20,6 @@ const SCOPES = "openid email profile https://www.googleapis.com/auth/drive.file 
 const FOLDER_NAME = "InventoraApp";
 const INVENTORY_FILENAME = "inventory.json";
 const STORAGE_FILENAME = "storage.json";
-const PENDING_PREFIX = "pending_actions_";
 const POLL_INTERVAL_MS = 10 * 1000; // 10 seconds
 const MERGE_REMOTE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -33,8 +32,15 @@ function simpleId(existingIds = []) {
   } while (existingIds.includes(id));
   return id;
 }
+function filenameTimeToIso(str) {
+  // "2025-09-22T08-45-01-964Z" -> "2025-09-22T08:45:01.964Z"
+  return str.replace(
+    /^(\d{4}-\d{2}-\d{2}T)(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/,
+    (_, date, h, m, s, ms) => `${date}${h}:${m}:${s}.${ms}Z`
+  );
+}
 
-export default function InventoryDriveClient() {
+export default function InventoraClient() {
   const [signedIn, setSignedIn] = useState(() => !!localStorage.getItem('accessToken'));
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem('accessToken'));
   const [userId, setUserId] = useState(null);
@@ -115,48 +121,50 @@ export default function InventoryDriveClient() {
     });
   }, [signedIn, accessToken, folderId]);
 
+  const pollingIntervalRunning = useRef(false);
   useEffect(() => {
-    if (!signedIn || !accessToken || !folderId) return;
-    function mergeLocalActionsInterval() {
-      // Latest action time.
-      const newestTime = getLatestActionTimeInRemote();
+    if (!signedIn || !accessToken || !folderId || !inventory.time || !storageUnits.time) return;
 
-      // Compare with local inventory/storage time
-      const localTime = Math.min(
-        new Date(inventory.time || 0).getTime(),
-        new Date(storageUnits.time || 0).getTime()
-      );
-      const newestTimeMs = new Date(newestTime).getTime();
+    async function mergeActionsInterval() {
+      if (pollingIntervalRunning.current) return; // Prevent overlap
+      pollingIntervalRunning.current = true;
+      try {
+        // ---- LOCAL MERGE ----
+        const newestTime = await getLatestActionTimeInRemote();
+        const localTime = Math.min(
+          new Date(inventory.time || 0).getTime(),
+          new Date(storageUnits.time || 0).getTime()
+        );
+        const newestTimeMs = new Date(newestTime).getTime();
 
-      if (newestTimeMs > localTime) {
-        if(localPendingActions.current.length == 0) {
-          // If there are no new actions, update the data.
-          mergeLocalActions();
-        }else {
-          setUpdateAvailable(true);
+        if (newestTimeMs > localTime) {
+          if(localPendingActions.current.length == 0) {
+            await mergeLocalActions();
+          } else {
+            setUpdateAvailable(true);
+          }
+        } else {
+          setUpdateAvailable(false);
         }
-      } else {
-        setUpdateAvailable(false);
+
+        // ---- REMOTE MERGE ----
+        await mergeRemoteActions(MERGE_REMOTE_THRESHOLD_MS);
+      } catch (e) {
+        console.error("Error in mergeActionsInterval:", e);
+      } finally {
+        pollingIntervalRunning.current = false;
       }
     }
-    const poll = setInterval(async () => {
-      mergeLocalActionsInterval();
+
+    const poll = setInterval(() => {
+      mergeActionsInterval();
     }, POLL_INTERVAL_MS);
-    
-    // Run once at the start.
-    mergeLocalActionsInterval();
+
+    mergeActionsInterval();
 
     return () => clearInterval(poll);
   }, [signedIn, accessToken, folderId, inventory.time, storageUnits.time]);
 
-  // Apply the changes from the "actions" folder into the JSONs.
-  useEffect(() => {
-    if (!signedIn || !accessToken || !folderId) return;
-    const mergeInterval = setInterval(async () => {
-      mergeRemoteActions(MERGE_REMOTE_THRESHOLD_MS);
-    }, POLL_INTERVAL_MS); 
-    return () => clearInterval(mergeInterval);
-  }, [signedIn, accessToken, folderId]);
 
   // Ask if the user really wants to exit when there are pending actions to be done.
   useEffect(() => {
@@ -247,7 +255,7 @@ export default function InventoryDriveClient() {
   async function findFileByNameInFolder(name) {
     await ensureFolder();
     const q = encodeURIComponent(`name='${name}' and '${folderId}' in parents and trashed=false`);
-    const res = await driveFetch(`/files?q=${q}&fields=files(id,name,modifiedTime,md5Checksum)`);
+    const res = await driveFetch(`/files?q=${q}&fields=files(id,name)`);
     if (!res) return null;
 
     const js = await res.json();
@@ -271,7 +279,7 @@ export default function InventoryDriveClient() {
       `--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
       JSON.stringify(contentObj, null, 2) + `\r\n` +
       `--${boundary}--`;
-    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime', {
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + accessToken,
@@ -287,7 +295,7 @@ export default function InventoryDriveClient() {
   }
 
   async function updateFileMedia(fileId, contentObj) {
-    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,modifiedTime`, {
+    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id`, {
       method: 'PATCH',
       headers: {
         'Authorization': 'Bearer ' + accessToken,
@@ -295,7 +303,10 @@ export default function InventoryDriveClient() {
       },
       body: JSON.stringify(contentObj, null, 2)
     });
-    if (!res.ok) { const txt = await res.text(); throw new Error('update failed: ' + res.status + ' ' + txt); }
+    if (!res.ok) { 
+      const txt = await res.text(); 
+      throw new Error('update failed: ' + res.status + ' ' + txt); 
+    }
     return await res.json();
   }
 
@@ -413,8 +424,8 @@ export default function InventoryDriveClient() {
       }
     }
 
-    const finalInv = { version: 0, items: Array.from(inv.items.values()) };
-    const finalStor = { version: 0, units: Array.from(stores.units.values()) };
+    const finalInv =  { version: 0, time: nowIso(), items: Array.from(inv.items.values()) };
+    const finalStor = { version: 0, time: nowIso(), units: Array.from(stores.units.values()) };
     return { finalInv, finalStor };
   }
 
@@ -446,27 +457,29 @@ export default function InventoryDriveClient() {
       const actionsFolderId = await ensureActionsFolder();
       // List all actions files
       const q = encodeURIComponent(`'${actionsFolderId}' in parents and trashed=false and name contains 'actions_'`);
-      const res = await driveFetch(`/files?q=${q}&fields=files(id,name,modifiedTime)`);
+      const res = await driveFetch(`/files?q=${q}&fields=files(id,name)`);
       if (!res) return null;
       const js = await res.json();
       const files = js.files || [];
       if (!files.length) return null;
 
-      // Download times from all actions files
-      let times = [];
+      let jsonTimes = [];
       for (const f of files) {
-        try {
-          const txt = await downloadFileText(f.id);
-          const json = JSON.parse(txt);
-          if (json.time) times.push(json.time);
-        } catch {}
+        // Extract ISO time from filename: actions_YYYY-MM-DDTHH-MM-SS-SSSZ.json
+        const match = f.name.match(/^actions_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)\.json$/);
+        if (match) {
+          // Convert filename time to ISO format
+          const fileTime = filenameTimeToIso(match[1]);
+          jsonTimes.push(fileTime);
+        }
       }
-      if (!times.length) return null;
-      times.sort(); // ISO sort, oldest first
-      return times[times.length - 1];
+      if (!jsonTimes.length) return null;
+
+      jsonTimes.sort(); // ISO sort, oldest first
+      return jsonTimes[jsonTimes.length - 1];
   }
 
-  async function getRemoteActionsAfter(timeIso) {
+  async function getRemoteActionsAfter(timeIso, thresholdMs = 0) {
     const actionsFolderId = await ensureActionsFolder();
     // List action files.
     const q = encodeURIComponent(`'${actionsFolderId}' in parents and trashed=false and name contains 'actions_'`);
@@ -475,34 +488,50 @@ export default function InventoryDriveClient() {
     const js = await res.json();
     const files = js.files || [];
     let actions = [];
+    let times = [];
     for (const f of files) {
-      try {
-        const txt = await downloadFileText(f.id);
-        const json = JSON.parse(txt);
-        if (json.time && new Date(json.time) > new Date(timeIso)) {
-          if (json.actions) actions = actions.concat(json.actions);
+      // Extract ISO time from filename: actions_YYYY-MM-DDTHH-MM-SS-SSSZ.json
+      const match = f.name.match(/^actions_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)\.json$/);
+      if (match) {
+        // Convert filename time to ISO format
+        const fileTime = filenameTimeToIso(match[1]);
+        if (new Date(fileTime) > new Date(timeIso) &&
+            (Date.now() - new Date(fileTime).getTime()) > thresholdMs) {
+          try {
+            times.push(fileTime);
+            const txt = await downloadFileText(f.id);
+            const json = JSON.parse(txt);
+            if (json.actions) actions = actions.concat(json.actions);
+          } catch {}
         }
-      } catch {}
+      }
     }
-    return actions;
+    return [actions, times];
   }
 
   async function mergeLocalActions() {
-    // Use the latest time from local inventory/storage
     const localTime = Math.max(
       new Date(inventory.time || 0).getTime(),
       new Date(storageUnits.time || 0).getTime()
     );
-    const actions = await getRemoteActionsAfter(new Date(localTime).toISOString());
+    const [actions, times] = await getRemoteActionsAfter(new Date(localTime).toISOString());
     if (!actions.length) return;
-    const { finalInv, finalStor } = applyActionsToState(actions);
-    setInventory(prev => ({ ...prev, ...finalInv }));
-    setStorageUnits(prev => ({ ...prev, ...finalStor }));
+
+    const sortedTimes = times.sort();
+    const latestActionTime = sortedTimes[sortedTimes.length - 1];
+    const mergeTime = latestActionTime ? new Date(latestActionTime).toISOString() : nowIso();
+    
+    const { finalInv, finalStor } = applyActionsToState(actions, inventory, storageUnits);
+    finalInv.time = mergeTime;
+    finalStor.time = mergeTime;
+    
+    setInventory(finalInv);
+    setStorageUnits(finalStor);
     setMergeLog(l => [`Merged ${actions.length} remote actions into local state`, ...l]);
   }
 
   async function mergeRemoteActions(thresholdMs = MERGE_REMOTE_THRESHOLD_MS) {
-    // Download current inventory and storage
+    // Download current inventory to fetch its update time.
     const invFile = await findFileByNameInFolder(INVENTORY_FILENAME);
     let lastUpdateTime = null;
     let initialInv = { items: [] };
@@ -516,6 +545,11 @@ export default function InventoryDriveClient() {
     }
     if (!lastUpdateTime) lastUpdateTime = new Date(0).toISOString();
 
+    // Fetch all actions after lastUpdateTime and thresholdMs milliseconds before now.
+    const [actionsToApply, jsonTimes] = await getRemoteActionsAfter(lastUpdateTime, thresholdMs);
+    if (!actionsToApply.length) return;
+
+    // There are actions to apply on the remote! Download the storage file.
     const storFile = await findFileByNameInFolder(STORAGE_FILENAME);
     let initialStor = { units: [] };
     if (storFile) {
@@ -524,32 +558,6 @@ export default function InventoryDriveClient() {
         initialStor = JSON.parse(txt);
       } catch {}
     }
-
-    // Fetch all actions after lastUpdateTime
-    const actionsFolderId = await ensureActionsFolder();
-    const q = encodeURIComponent(`'${actionsFolderId}' in parents and trashed=false and name contains 'actions_'`);
-    const res = await driveFetch(`/files?q=${q}&fields=files(id,name)`);
-    let jsonTimes = [];
-
-    if (!res) return;
-    const js = await res.json();
-    const files = js.files || [];
-    let actionsToApply = [];
-    for (const f of files) {
-      try {
-        const txt = await downloadFileText(f.id);
-        const json = JSON.parse(txt);
-        if (
-          json.time &&
-          new Date(json.time) > new Date(lastUpdateTime) &&
-          (Date.now() - new Date(json.time).getTime()) > thresholdMs
-        ) {
-          if (json.actions) actionsToApply = actionsToApply.concat(json.actions);
-          jsonTimes.push(json.time);
-        }
-      } catch {}
-    }
-    if (!actionsToApply.length) return;
 
     // Apply actions to initial state
     const { finalInv, finalStor } = applyActionsToState(actionsToApply, initialInv, initialStor);
