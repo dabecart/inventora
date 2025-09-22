@@ -45,6 +45,7 @@ button {
   background-color: #1a1a1a;
   cursor: pointer;
   transition: border-color 0.25s;
+  color: inherit;
 }
 button:hover {
   border-color: #646cff;
@@ -54,16 +55,35 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+input,
+select,
+textarea {
+  background-color: #1a1a1a; /* dark background */
+  color: #ffffff;            /* white text */
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 0.4em 0.6em;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #646cff;
+}
+
+::placeholder {
+  color: #aaaaaa;
+  opacity: 1;
+}
+
 @media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
+  input,
+  select,
+  textarea {
     background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
+    color: #213547;
+    border: 1px solid #ccc;
   }
 }
 

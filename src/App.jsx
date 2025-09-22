@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 
 // Single-file React + Tailwind client-only app
 // Replace CLIENT_ID with your Google OAuth Web App Client ID
@@ -53,6 +54,9 @@ export default function InventoraClient() {
 
   const [mergeLog, setMergeLog] = useState([]);
   const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  const [editingItem, setEditingItem] = useState(null);
+  const [editingStorage, setEditingStorage] = useState(null);
 
   // init GIS token client
   useEffect(() => {
@@ -353,62 +357,82 @@ export default function InventoraClient() {
   //  - rename_storage
   //  - set_quantity
   //  - add_count
-  //  - subtract_count
   //  - move_item
+  //  - set_item_meta
+  //  - remove_item_meta
+  //  - set_storage_meta
+  //  - remove_storage_meta
 
   function validateAction(action, inventory, storageUnits) {
-    const p = action.payload || {};
-    switch (action.type) {
-      case 'create_item': {
-        // id must be unique
-        if ((inventory.items || []).some(it => it.id === p.id)) return false;
-        if (p.initialQty < 0) return false;
-        if (p.storageUnitId && !(storageUnits.units || []).some(u => u.id === p.storageUnitId)) return false;
-        return true;
-      }
+    function validateActionSwitch() {
+      const p = action.payload || {};
+      switch (action.type) {
+        case 'create_item': {
+          // id must be unique
+          if ((inventory.items || []).some(it => it.id === p.id)) return false;
+          if (p.initialQty < 0) return false;
+          if (p.storageUnitId && !(storageUnits.units || []).some(u => u.id === p.storageUnitId)) return false;
+          return true;
+        }
 
-      case 'delete_item': {
-        return (inventory.items || []).some(it => it.id === p.id);
-      }
+        case 'delete_item': {
+          return (inventory.items || []).some(it => it.id === p.id);
+        }
 
-      case 'create_storage': {
-        return !(storageUnits.units || []).some(u => u.id === p.id);
-      }
+        case 'create_storage': {
+          return !(storageUnits.units || []).some(u => u.id === p.id);
+        }
 
-      case 'delete_storage': {
-        return (storageUnits.units || []).some(u => u.id === p.id);
-      }
+        case 'delete_storage': {
+          return (storageUnits.units || []).some(u => u.id === p.id);
+        }
 
-      case 'add_count': {
-        return (inventory.items || []).some(it => it.id === p.id && p.amount > 0);
-      }
+        case 'add_count': {
+          return (inventory.items || []).some(it => it.id === p.id && p.amount != 0);
+        }
 
-      case 'subtract_count': {
-        const it = (inventory.items || []).find(it => it.id === p.id);
-        return it && p.amount > 0 && it.qty >= p.amount;
-      }
+        case 'move_item': {
+          const it = (inventory.items || []).find(it => (it.id === p.id) && (it.storageUnitId !== p.toStorageId));
+          if (!it) return false;
+          if (p.toStorageId && !(storageUnits.units || []).some(u => u.id === p.toStorageId)) return false;
+          return true;
+        }
 
-      case 'move_item': {
-        const it = (inventory.items || []).find(it => it.id === p.id);
-        if (!it) return false;
-        if (p.toStorageId && !(storageUnits.units || []).some(u => u.id === p.toStorageId)) return false;
-        return true;
-      }
+        case 'rename_item': {
+          return (inventory.items || []).some(it => (it.id === p.id) && (it.name !== p.name.trim())) && !!p.name.trim();
+        }
 
-      case 'rename_item': {
-        return (inventory.items || []).some(it => it.id === p.id) && !!p.name.trim();
-      }
+        case 'set_quantity': {
+          return (inventory.items || []).some(it => (it.id === p.id) && (it.qty !== p.qty)) && p.qty >= 0;
+        }
 
-      case 'set_quantity': {
-        return (inventory.items || []).some(it => it.id === p.id) && p.qty >= 0;
-      }
+        case 'rename_storage': {
+          return (storageUnits.units || []).some(u => (u.id === p.id) && (it.name !== p.name.trim())) && !!p.name.trim();
+        }
 
-      case 'rename_storage': {
-        return (storageUnits.units || []).some(u => u.id === p.id) && !!p.name.trim();
-      }
+        case 'set_item_meta': {
+          return (inventory.items || []).some(it => it.id === p.id) && !!p.key;
+        }
 
-      default: return false;
+        case 'remove_item_meta': {
+          return (inventory.items || []).some(it => it.id === p.id) && !!p.key;
+        }
+        case 'set_storage_meta': {
+          return (storageUnits.units || []).some(u => u.id === p.id) && !!p.key;
+        }
+        case 'remove_storage_meta': {
+          return (storageUnits.units || []).some(u => u.id === p.id) && !!p.key;
+        }
+
+        default: return false;
+      }
     }
+
+    const ret = validateActionSwitch();
+    // if(!ret) {
+    //   console.error(`Invalid action: ${action}` )
+    // }
+    return ret;
   }
 
   function applyActionsToState(actionList, initialInv = { items: [] }, initialStor = { units: [] }) {
@@ -457,13 +481,6 @@ export default function InventoraClient() {
           it.qty = Math.max(0, Number(it.qty || 0) + Number(p.amount || 0)); // Clamp to >= 0
           break;
         }
-        case 'subtract_count': {
-          if (!p.id) break;
-          const it = inv.items.get(p.id);
-          if (!it) break;
-          it.qty = Math.max(0, Number(it.qty || 0) - Number(p.amount || 0)); // Clamp to >= 0
-          break;
-        }
         case 'move_item': {
           if (!p.id) break;
           const it = inv.items.get(p.id);
@@ -486,6 +503,39 @@ export default function InventoraClient() {
           if (st && p.name) st.name = p.name;
           break;
         }
+
+        case 'set_item_meta': {
+           const it = inv.items.get(p.id);
+           if (it) it.meta = { ...it.meta, [p.key]: p.value }; 
+           break;
+        } 
+
+        case 'remove_item_meta': {
+           const it = inv.items.get(p.id);
+           if (it) { 
+            const m = { ...it.meta }; 
+            delete m[p.key]; 
+            it.meta = m; 
+          } 
+          break;
+        } 
+
+        case 'set_storage_meta': {
+           const st = stores.units.get(p.id);
+           if (st) st.meta = { ...st.meta, [p.key]: p.value }; 
+           break;
+        } 
+
+        case 'remove_storage_meta': {
+           const st = stores.units.get(p.id);
+           if (st) { 
+            const m = { ...st.meta }; 
+            delete m[p.key]; 
+            st.meta = m; 
+          } 
+          break;
+        } 
+
         default:
           break;
       }
@@ -733,16 +783,6 @@ export default function InventoraClient() {
     setInventory(finalInv);
   }
 
-  function handleSubtractCount(id, amount) {
-    const payload = { id, amount: Number(amount) };
-    const action = createAction('subtract_count', payload);
-    if (!validateAction(action, inventory, storageUnits)) return;
-
-    const { finalInv } = applyActionsToState([action], inventory, storageUnits);
-    enqueueAction(action);
-    setInventory(finalInv);
-  }
-
   function handleMoveItem(id, toStorageId) {
     const payload = { id, toStorageId };
     const action = createAction('move_item', payload);
@@ -751,6 +791,45 @@ export default function InventoraClient() {
     const { finalInv } = applyActionsToState([action], inventory, storageUnits);
     enqueueAction(action);
     setInventory(finalInv);
+  }
+
+  function handleSetItemMeta(id, key, value, inventory, storageUnits, enqueueAction, setInventory) {
+    const action = createAction('set_item_meta', { id, key, value });
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setInventory(finalInv);
+  }
+
+
+  function handleRemoveItemMeta(id, key, inventory, storageUnits, enqueueAction, setInventory) {
+    const action = createAction('remove_item_meta', { id, key });
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setInventory(finalInv);
+  }
+
+
+  function handleSetStorageMeta(id, key, value, inventory, storageUnits, enqueueAction, setStorageUnits) {
+    const action = createAction('set_storage_meta', { id, key, value });
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setStorageUnits(finalStor);
+  }
+
+
+  function handleRemoveStorageMeta(id, key, inventory, storageUnits, enqueueAction, setStorageUnits) {
+    const action = createAction('remove_storage_meta', { id, key });
+    if (!validateAction(action, inventory, storageUnits)) return;
+
+    const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+    enqueueAction(action);
+    setStorageUnits(finalStor);
   }
 
   // ---------------- UI actions: sign-in, push pending, manual merge ----------------
@@ -799,7 +878,7 @@ export default function InventoraClient() {
           {signedIn ? 'Log out' : 'Sign in'}
         </button>
         <button onClick={manualPush} className="px-3 py-1 rounded bg-green-600 text-white mr-2">Push</button>
-        <div className="ml-4 text-sm text-gray-600 flex flex-col grow items-end">
+        <div className="ml-4 text-sm text-white flex flex-col grow items-end">
           <p>User: {userId || '(anonymous)'}</p>      
           <span>Status: {status}</span>
         </div>
@@ -841,49 +920,17 @@ export default function InventoraClient() {
           </thead>
           <tbody>
             {(inventory.items || []).map(it => {
-              // Find storage name by id
               const storage = (storageUnits.units || []).find(u => u.id === it.storageUnitId);
               return (
                 <tr key={it.id} className="border-t">
-                <td title={it.id}>
-                  <input
-                    type="text"
-                    value={it.name}
-                    onChange={e => handleRenameItem(it.id, e.target.value)}
-                    className="px-1 py-0.5 border rounded text-sm bg-gray-500"
-                  />
-                </td>
-                <td title={`Qty ID: ${it.id}`}>
-                  <input
-                    type="number"
-                    min="0"
-                    value={it.qty}
-                    onChange={e => handleSetQuantity(it.id, e.target.value)}
-                    className="w-20 px-1 py-0.5 border rounded text-sm bg-gray-500"
-                  />
-                </td>
-                  <td>
-                    <select
-                      value={it.storageUnitId || ''}
-                      onChange={e => handleMoveItem(it.id, e.target.value || null)}
-                      className="px-2 py-1 border rounded bg-gray-500"
-                    >
-                      <option value="" className="bg-gray-500">(no storage)</option>
-                      {(storageUnits.units || []).map(u =>
-                        <option key={u.id} value={u.id} className="bg-gray-500">{u.name}</option>
-                      )}
-                    </select>
-                  </td>
-                  <td className="space-x-2">
-                    <button onClick={() => handleAddCount(it.id, 1)} className="m-1 px-2 py-1 rounded bg-green-600 text-white text-xs">+1</button>
-                    <button
-                      onClick={() => handleSubtractCount(it.id, 1)}
-                      className="m-1 px-2 py-1 rounded bg-orange-500 text-white text-xs"
-                      disabled={it.qty === 0} // <-- Disable if qty is zero
-                    >
-                      -1
-                    </button>
-                    <button onClick={() => handleDeleteItem(it.id)} className="m-1 px-2 py-1 rounded bg-red-600 text-white text-xs">Delete</button>
+                  <td title={it.id}>{it.name}</td>
+                  <td>{it.qty}</td>
+                  <td title={it.storageUnitId}>{storage ? storage.name : "(no storage)"}</td>
+                  <td className="flex gap-1">
+                    <button onClick={() => handleAddCount(it.id, 1)} className="px-2 py-1 rounded bg-green-600 text-white text-xs">+1</button>
+                    <button onClick={() => handleAddCount(it.id, -1)} className="px-2 py-1 rounded bg-orange-500 text-white text-xs" disabled={it.qty === 0}>-1</button>
+                    <button onClick={() => setEditingItem(it)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={14} /></button>
+                    <button onClick={() => handleDeleteItem(it.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={14} /></button>
                   </td>
                 </tr>
               );
@@ -896,28 +943,60 @@ export default function InventoraClient() {
         <h2 className="font-semibold">Storage Units</h2>
         <StorageUnitCreator onCreate={handleCreateStorage} existingNames={(storageUnits.units || []).map(u => u.name)} />
         <ul className="mt-3">
-          {storageUnits.units && storageUnits.units.length ? 
+          {storageUnits.units && storageUnits.units.length ?
             storageUnits.units.map(u => (
               <li key={u.id} className="flex justify-between items-center py-1 border-b">
-              <div title={u.id}>
-                <input
-                  type="text"
-                  value={u.name}
-                  onChange={e => handleRenameStorage(u.id, e.target.value)}
-                  className="px-1 py-0.5 border rounded text-sm bg-gray-500"
-                />
-                <span className="text-xs text-gray-500 ml-1">({u.id})</span>
-              </div>
-                <div className="space-x-2">
-                  <button onClick={() => handleDeleteStorage(u.id)} className="px-2 py-1 rounded bg-red-500 text-white text-sm">Delete</button>
+                <div title={u.id}>{u.name}<span className="text-xs text-gray-500 ml-1">({u.id})</span></div>
+                <div className="flex gap-1">
+                  <button onClick={() => setEditingStorage(u)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={14} /></button>
+                  <button onClick={() => handleDeleteStorage(u.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={14} /></button>
                 </div>
               </li>
-            )) 
-            : 
-            <li className="text-sm text-gray-500">No storage units</li>
-          }
+            )) : <li className="text-sm text-gray-500">No storage units</li>}
         </ul>
       </div>
+
+      {editingItem && (
+        <EditItemModal
+          item={editingItem}
+          storageUnits={storageUnits.units}
+          onSave={(updated) => {
+            handleRenameItem(editingItem.id, updated.name);
+            handleSetQuantity(editingItem.id, updated.qty);
+            handleMoveItem(editingItem.id, updated.storageUnitId);
+            // Meta updates
+            Object.entries(updated.meta).forEach(([k, v]) => {
+              handleSetItemMeta(editingItem.id, k, v, inventory, storageUnits, enqueueAction, setInventory);
+            });
+            Object.keys(editingItem.meta || {}).forEach(k => {
+              if (!(k in updated.meta)) {
+                handleRemoveItemMeta(editingItem.id, k, inventory, storageUnits, enqueueAction, setInventory);
+              }
+            });
+            setEditingItem(null);
+          }}
+          onDiscard={() => setEditingItem(null)}
+        />
+      )}
+
+      {editingStorage && (
+        <EditStorageModal
+          unit={editingStorage}
+          onSave={(updated) => {
+            handleRenameStorage(editingStorage.id, updated.name);
+            Object.entries(updated.meta).forEach(([k, v]) => {
+              handleSetStorageMeta(editingStorage.id, k, v, inventory, storageUnits, enqueueAction, setStorageUnits);
+            });
+            Object.keys(editingStorage.meta || {}).forEach(k => {
+              if (!(k in updated.meta)) {
+                handleRemoveStorageMeta(editingStorage.id, k, inventory, storageUnits, enqueueAction, setStorageUnits);
+              }
+            });
+            setEditingStorage(null);
+          }}
+          onDiscard={() => setEditingStorage(null)}
+        />
+      )}
 
       <div className="mt-6 border rounded">
         <details>
@@ -999,7 +1078,6 @@ function ItemCreator({ storageUnits, onCreate }) {
       setError('Item name cannot be empty.');
       return;
     }
-    // Optionally, require storage selection (remove this check if not needed)
     // if (!storageId) {
     //   setError('Please select a storage unit.');
     //   return;
@@ -1035,12 +1113,113 @@ function ItemCreator({ storageUnits, onCreate }) {
       </select>
       <button
         onClick={handleCreate}
-        disabled={!name.trim()}
-        className={`px-3 py-1 rounded ${!name.trim() ? 'bg-gray-400' : 'bg-green-600'} text-white`}
+        disabled={!name.trim() || qty < 0}
+        className={`px-3 py-1 rounded ${(!name.trim() || qty < 0) ? 'bg-gray-400' : 'bg-green-600'} text-white`}
       >
         Create
       </button>
       {error && <span className="text-red-600 text-xs ml-2">{error}</span>}
+    </div>
+  );
+}
+
+function EditItemModal({ item, storageUnits, onSave, onDiscard }) {
+  const [name, setName] = useState(item.name);
+  const [qty, setQty] = useState(item.qty);
+  const [storageId, setStorageId] = useState(item.storageUnitId || "");
+  const [meta, setMeta] = useState({ ...item.meta });
+
+  const allTags = ["tags", "part number", "serial number", "link", "manufacturer", "datasheet link"];
+
+  function addMeta(key) {
+    if (key && !(key in meta)) setMeta({ ...meta, [key]: "" });
+  }
+  function removeMeta(key) {
+    const newMeta = { ...meta };
+    delete newMeta[key];
+    setMeta(newMeta);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-gray-600 p-6 rounded-lg w-96">
+        <h2 className="text-lg font-semibold mb-4">Edit Item</h2>
+        <div className="space-y-3">
+          <input value={name} onChange={e => setName(e.target.value)} className="w-full border px-2 py-1 rounded" />
+          <input type="number" min="0" value={qty} onChange={e => setQty(e.target.value)} className="w-full border px-2 py-1 rounded" />
+          <select value={storageId} onChange={e => setStorageId(e.target.value)} className="w-full border px-2 py-1 rounded">
+            <option value="">(no storage)</option>
+            {storageUnits.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+
+          <div>
+            <h3 className="font-semibold">Meta</h3>
+            {Object.entries(meta).map(([k, v]) => (
+              <div key={k} className="flex gap-2 items-center my-1">
+                <span className="w-32">{k}</span>
+                <input value={v} onChange={e => setMeta({ ...meta, [k]: e.target.value })} className="flex-1 border px-2 py-1 rounded" />
+                <button onClick={() => removeMeta(k)} className="text-red-600">x</button>
+              </div>
+            ))}
+            <select onChange={e => { addMeta(e.target.value); e.target.value=""; }} className="mt-2 border px-2 py-1 rounded">
+              <option value="">Add meta...</option>
+              {allTags.filter(t => !(t in meta)).map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onDiscard} className="px-3 py-1 rounded bg-gray-400 text-white">Discard</button>
+          <button onClick={() => onSave({ name, qty: Number(qty), storageUnitId: storageId || null, meta })} className="px-3 py-1 rounded bg-blue-600 text-white">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditStorageModal({ unit, onSave, onDiscard }) {
+  const [name, setName] = useState(unit.name);
+  const [meta, setMeta] = useState({ ...unit.meta });
+
+  const allTags = ["location", "capacity", "description"];
+
+  function addMeta(key) {
+    if (key && !(key in meta)) setMeta({ ...meta, [key]: "" });
+  }
+  function removeMeta(key) {
+    const newMeta = { ...meta };
+    delete newMeta[key];
+    setMeta(newMeta);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-gray-600 p-6 rounded-lg w-96">
+        <h2 className="text-lg font-semibold mb-4">Edit Storage</h2>
+        <div className="space-y-3">
+          <input value={name} onChange={e => setName(e.target.value)} className="w-full border px-2 py-1 rounded" />
+
+          <div>
+            <h3 className="font-semibold">Meta</h3>
+            {Object.entries(meta).map(([k, v]) => (
+              <div key={k} className="flex gap-2 items-center my-1">
+                <span className="w-32">{k}</span>
+                <input value={v} onChange={e => setMeta({ ...meta, [k]: e.target.value })} className="flex-1 border px-2 py-1 rounded" />
+                <button onClick={() => removeMeta(k)} className="text-red-600">x</button>
+              </div>
+            ))}
+            <select onChange={e => { addMeta(e.target.value); e.target.value=""; }} className="mt-2 border px-2 py-1 rounded">
+              <option value="">Add meta...</option>
+              {allTags.filter(t => !(t in meta)).map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onDiscard} className="px-3 py-1 rounded bg-gray-400 text-white">Discard</button>
+          <button onClick={() => onSave({ name, meta })} className="px-3 py-1 rounded bg-blue-600 text-white">Save</button>
+        </div>
+      </div>
     </div>
   );
 }
