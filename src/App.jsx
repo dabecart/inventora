@@ -1,20 +1,18 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Pencil, Trash2 } from "lucide-react";
-
-// Single-file React + Tailwind client-only app
-// Replace CLIENT_ID with your Google OAuth Web App Client ID
-// Notes:
-// - Uses Google Identity Services (GIS) token client for OAuth token.
-// - Stores three master JSON files in a Drive folder named "InventoryApp":
-//    - inventory.json   (items with counts and metadata)
-//    - storage.json     (storage units list)
-//    - actions.json     (authoritative list of actions applied to system)
-// - When a client performs actions, they are appended locally and uploaded
-//   as a pending action file (pending_actions_<ts>_<clientId>.json) if collision is detected.
-// - Any client can run a merge process that performs a 3-way merge of actions
-//   (base / ours / theirs) and then re-applies the resulting action list to rebuild
-//   inventory.json and storage.json. Pending action files older than MERGE_DELAY_MS
-//   are merged automatically by the background loop.
+// Icons.
+import {  
+    Pencil,
+    Trash2,
+    LogOut,
+    UploadCloud,
+    Search,
+    Plus,
+    Minus,
+    Camera,
+    Image as ImageIcon,
+    X as XIcon,
+    Check
+} from "lucide-react";
 
 const CLIENT_ID = "840716343022-4p7cpk2v1nj32u7s1km6ckq57imuikhe.apps.googleusercontent.com";
 const SCOPES = "openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly";
@@ -205,6 +203,10 @@ export default function InventoraClient() {
       // Search for folder
       const q = encodeURIComponent(`name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
       const res = await driveFetch(`/files?q=${q}&fields=files(id,name)`);
+      if(res === null){
+        folderPromiseRef.current = null;
+        return null;
+      }
       if (res) {
         const js = await res.json();
         if (js.files && js.files.length > 0) {
@@ -230,7 +232,7 @@ export default function InventoraClient() {
   }
 
   async function ensureActionsFolder() {
-    await ensureFolder();
+    if(await ensureFolder() === null) return null;
     // Search for actions folder inside main folder
     const q = encodeURIComponent(`name='actions' and mimeType='application/vnd.google-apps.folder' and '${folderId}' in parents and trashed=false`);
     const res = await driveFetch(`/files?q=${q}&fields=files(id,name)`);
@@ -251,7 +253,7 @@ export default function InventoraClient() {
   }
 
   async function findFileByNameInFolder(name) {
-    await ensureFolder();
+    if(await ensureFolder() === null) return null;
     const q = encodeURIComponent(`name='${name}' and '${folderId}' in parents and trashed=false`);
     const res = await driveFetch(`/files?q=${q}&fields=files(id,name)`);
     if (!res) return null;
@@ -926,9 +928,9 @@ export default function InventoraClient() {
                   <td title={it.id}>{it.name}</td>
                   <td>{it.qty}</td>
                   <td title={it.storageUnitId}>{storage ? storage.name : "(no storage)"}</td>
-                  <td className="flex gap-1">
-                    <button onClick={() => handleAddCount(it.id, 1)} className="px-2 py-1 rounded bg-green-600 text-white text-xs">+1</button>
-                    <button onClick={() => handleAddCount(it.id, -1)} className="px-2 py-1 rounded bg-orange-500 text-white text-xs" disabled={it.qty === 0}>-1</button>
+                  <td className="flex gap-1 my-1">
+                    <button onClick={() => handleAddCount(it.id, 1)} className="p-1 rounded bg-green-600 text-white text-xs"><Plus size={14} /></button>
+                    <button onClick={() => handleAddCount(it.id, -1)} className="p-1 rounded bg-orange-500 text-white text-xs" disabled={it.qty === 0}><Minus size={14} /></button>
                     <button onClick={() => setEditingItem(it)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={14} /></button>
                     <button onClick={() => handleDeleteItem(it.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={14} /></button>
                   </td>
