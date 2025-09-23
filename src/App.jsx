@@ -70,6 +70,97 @@ export default function InventoraClient() {
     }
   }
 
+  // ---------------- Validation functions -------------------
+  function validateFromNewForm(name, initialQty, storageUnitId, meta) {
+    return newItemFromForm(name, initialQty, storageUnitId, meta, true) || null;
+  }
+
+  function validateItemFromEditForm(name, qty, storageUnitId, meta) {
+    const nameErrors      = (editingItem.name !== name) ? 
+                            handleRenameItem(editingItem.id, name, true) || null : 
+                            null;
+    const qtyErrors       = (editingItem.qty !== qty) ? 
+                            handleSetQuantity(editingItem.id, qty, true) || null : 
+                            null;
+    const moveItemErrors  = (editingItem.storageUnitId !== storageUnitId) ? 
+                            handleMoveItem(editingItem.id, storageUnitId, true) || null : 
+                            null;
+    let errorResults = [nameErrors, qtyErrors, moveItemErrors];
+
+    // Meta updates
+    Object.entries(meta || {}).forEach(([k, v]) => {
+      if(k in editingItem.meta && !(k in meta)) {
+        errorResults.push(handleRemoveItemMeta(editingItem.id, k, true) || null);
+      }else if(k in meta && !(k in editingItem.meta)) {
+        errorResults.push(handleSetItemMeta(editingItem.id, k, v, true) || null);
+      }else {
+        errorResults.push(
+          (editingItem.meta[k] !== meta[k]) ? 
+          handleSetItemMeta(editingItem.id, k, v, true) || null :
+          null
+        );
+      }     
+    });
+
+    const errors = {};
+    errorResults.forEach(err => {
+      if(err === null) return;
+
+      Object.entries(err).forEach(([k, v]) => {
+        if(k === "meta") {
+          if(!('meta' in errors)) errors.meta = {};
+
+          Object.entries(v).forEach(([metaK, metaV]) => {
+            errors.meta[metaK] = metaV;
+          });
+        }else {
+          errors[k] = v;
+        }
+      });
+    });
+    return errors;
+  }
+
+  function validateStorageFromEditForm(name, meta) {
+    const nameErrors      = (editingStorage.name !== name) ? 
+                            handleRenameStorage(editingStorage.id, name, true) || null : 
+                            null;
+    let errorResults = [nameErrors];
+
+    // Meta updates
+    Object.entries(meta || {}).forEach(([k, v]) => {
+      if(k in editingStorage.meta && !(k in meta)) {
+        errorResults.push(handleRemoveStorageMeta(editingStorage.id, k, true) || null);
+      }else if(k in meta && !(k in editingStorage.meta)) {
+        errorResults.push(handleSetStorageMeta(editingStorage.id, k, v, true) || null);
+      }else {
+        errorResults.push(
+          (editingStorage.meta[k] !== meta[k]) ? 
+          handleSetStorageMeta(editingStorage.id, k, v, true) || null :
+          null
+        );
+      }     
+    });
+
+    const errors = {};
+    errorResults.forEach(err => {
+      if(err === null) return;
+
+      Object.entries(err).forEach(([k, v]) => {
+        if(k === "meta") {
+          if(!('meta' in errors)) errors.meta = {};
+
+          Object.entries(v).forEach(([metaK, metaV]) => {
+            errors.meta[metaK] = metaV;
+          });
+        }else {
+          errors[k] = v;
+        }
+      });
+    });
+    return errors;
+  }
+
   // ---------------- Render UI ----------------
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -160,10 +251,22 @@ export default function InventoraClient() {
           item={editingItem}
           storageUnits={storageUnits.units}
           onSave={(updated) => {
-            // TODO.
+            // Apply everything in bulk.
+            handleRenameItem(editingItem.id, updated.name);
+            handleSetQuantity(editingItem.id, updated.qty);
+            handleMoveItem(editingItem.id, updated.storageUnitId);
+            Object.entries(updated.meta).forEach(([k, v]) => {
+              handleSetItemMeta(editingItem.id, k, v);
+            });
+            Object.keys(editingItem.meta || {}).forEach(k => {
+              if (!(k in updated.meta)) {
+                handleRemoveItemMeta(editingItem.id, k);
+              }
+            });
             setEditingItem(null);
           }}
           onDiscard={() => setEditingItem(null)}
+          validationFunction={validateItemFromEditForm}
         />
       )}
 
@@ -171,10 +274,19 @@ export default function InventoraClient() {
         <EditStorageModal
           unit={editingStorage}
           onSave={(updated) => {
-            // TODO
+            handleRenameStorage(editingStorage.id, updated.name);
+            Object.entries(updated.meta).forEach(([k, v]) => {
+              handleSetStorageMeta(editingStorage.id, k, v);
+            });
+            Object.keys(editingStorage.meta || {}).forEach(k => {
+              if (!(k in updated.meta)) {
+                handleRemoveStorageMeta(editingStorage.id, k);
+              }
+            });
             setEditingStorage(null);
           }}
           onDiscard={() => setEditingStorage(null)}
+          validationFunction={validateStorageFromEditForm}
         />
       )}
 
@@ -207,25 +319,29 @@ function FieldError({ text }) {
   return <div className="text-xs text-red-400 mt-1">{text}</div>;
 }
 
-function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], onSave, onDiscard }) {
+function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], onSave, onDiscard, validationFunction }) {
   const [name, setName] = useState(item.name || '');
   const [qty, setQty] = useState(item.qty ?? 0);
   const [storageId, setStorageId] = useState(item.storageUnitId || '');
   const [meta, setMeta] = useState({ ...(item.meta || {}) });
 
-  const [errors, setErrors] = useState({});
-
-  useEffect(() => setErrors(validateItemForm({ name, qty })), [name, qty]);
+  const errors = validationFunction(name, Number(qty), storageId, meta);
 
   function handleSave() {
-    const formErr = validateItemForm({ name, qty });
-    if (Object.keys(formErr).length) { setErrors(formErr); return; }
-    onSave({ name: name.trim(), qty: Number(qty), storageUnitId: storageId || null, meta });
+    const formErr = validationFunction(name, Number(qty), storageId, meta);
+    if(Object.keys(formErr).length === 0){
+      onSave({ 
+        name: name.trim(), 
+        qty: Number(qty), 
+        storageUnitId: storageId || null, 
+        meta 
+      });
+    }
   }
 
   const metaKeys = ['tags','part number','serial number','link','manufacturer','datasheet link','photos'];
 
-  const hasErrors = Object.keys(errors).length > 0 || Object.entries(meta).some(([k,v]) => validateMetaField(k,v));
+  const hasErrors = Object.keys(errors).length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
@@ -255,7 +371,7 @@ function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], onSa
           <div>
             <label className="block text-sm text-gray-400 mb-2">Meta</label>
             <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded">
-              <MetaEditor meta={meta} allowedKeys={metaKeys} onChange={m => setMeta(m)} validateField={validateMetaField} />
+              <MetaEditor meta={meta} allowedKeys={metaKeys} onChange={m => setMeta(m)} validationErrors={errors.meta || {}} />
             </div>
           </div>
         </div>
@@ -269,21 +385,21 @@ function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], onSa
   );
 }
 
-function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard }) {
+function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard, validationFunction}) {
   const [name, setName] = useState(unit.name || '');
   const [meta, setMeta] = useState({ ...(unit.meta || {}) });
-  const [errors, setErrors] = useState({});
 
-  useEffect(() => setErrors(validateStorageForm({ name })), [name]);
+  const errors = validationFunction(name, meta);
 
   function handleSave() {
-    const formErr = validateStorageForm({ name });
-    if (Object.keys(formErr).length) { setErrors(formErr); return; }
-    onSave({ name: name.trim(), meta });
+    const formErr = validationFunction(name.trim(), meta);
+    if(Object.keys(formErr).length === 0){
+      onSave({ name: name.trim(), meta });
+    }
   }
 
   const storageMetaKeys = ['location','capacity','description','photos'];
-  const hasErrors = Object.keys(errors).length > 0 || Object.entries(meta).some(([k,v]) => validateMetaField(k,v));
+  const hasErrors = Object.keys(errors).length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
@@ -303,7 +419,7 @@ function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard
           <div>
             <label className="block text-sm text-gray-400 mb-2">Meta</label>
             <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded">
-              <MetaEditor meta={meta} allowedKeys={storageMetaKeys} onChange={m => setMeta(m)} validateField={validateMetaField} />
+              <MetaEditor meta={meta} allowedKeys={storageMetaKeys} onChange={m => setMeta(m)} validationErrors={errors.meta || {}} />
             </div>
           </div>
         </div>
@@ -317,7 +433,7 @@ function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard
   );
 }
 
-function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, validateField }) {
+function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, validationErrors }) {
   const [meta, setMeta] = useState({ ...initialMeta });
   const available = allowedKeys.filter(k => !(k in meta));
 
@@ -341,7 +457,7 @@ function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, valida
           <div key={k} className="flex gap-2 items-start">
             <div className="w-36 text-sm text-gray-300">{k}</div>
             {k === 'photos' ? (
-              <PhotoMetaEditor value={v} onChange={(val) => setKeyValue(k, val)} validate={validateField} />
+              <PhotoMetaEditor value={v} onChange={(val) => setKeyValue(k, val)} validationErrors={validationErrors} />
             ) : (
               <div className="flex-1">
                 <input
@@ -349,10 +465,10 @@ function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, valida
                   onChange={e => setKeyValue(k, e.target.value)}
                   className="w-full px-2 py-1 rounded bg-gray-800 text-white border border-gray-700"
                 />
-                <FieldError text={validateField ? validateField(k, v) : null} />
+                <FieldError text={validationErrors[k]} />
               </div>
             )}
-            <button onClick={() => removeKey(k)} className="px-2 py-1 text-sm text-red-400">Remove</button>
+            <button onClick={() => removeKey(k)} className="px-2 py-1 text-sm text-red-400"><Trash2 size={14}/></button>
           </div>
         ))}
       </div>
@@ -366,7 +482,7 @@ function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, valida
   );
 }
 
-function PhotoMetaEditor({ value = [], onChange, validate }) {
+function PhotoMetaEditor({ value = [], onChange, validationErrors }) {
   // value is array of { id, src } where src can be dataURL or remote url
   const [items, setItems] = useState(Array.isArray(value) ? value.slice() : []);
 
@@ -404,7 +520,7 @@ function PhotoMetaEditor({ value = [], onChange, validate }) {
           </div>
         ))}
       </div>
-      <FieldError text={validate ? validate('photos', items) : null} />
+      <FieldError text={validationErrors.photo} />
     </div>
   );
 }

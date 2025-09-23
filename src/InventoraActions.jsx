@@ -1,3 +1,4 @@
+import { meta } from '@eslint/js';
 import {simpleId, nowIso} from './Utils'
 
 // ---------------- Action model & applying ----------------
@@ -23,11 +24,11 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
     switch(metaKey) {
       case 'link':
       case 'datasheet link': {
-        if (!value) {
+        if (!metaValue) {
           return "Link cannot be empty.";
         }
         try { 
-          new URL(value); 
+          new URL(metaValue); 
           return null; 
         } catch { 
           return 'Must be a valid URL.'; 
@@ -41,6 +42,14 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
 
       case 'tags': {
         // TODO: Validate the commas
+        if(!metaValue) return 'Cannot be empty.'
+        return null;
+      }
+
+      case 'manufacturer':
+      case 'part number':
+      case 'serial number': {
+        if(!metaValue) return 'Cannot be empty.'
         return null;
       }
     }
@@ -49,7 +58,7 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
 
   function validateAction(action, inventory, storageUnits) {
     const p = action.payload || {};
-    const errors = null;
+    let errors = null;
     function addError(key, value) {
       if(errors === null) errors = {};
       errors[key] = value;
@@ -62,7 +71,6 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
 
     switch (action.type) {
       case 'create_item': {
-        // id must be unique
         if ((inventory.items || []).some(it => it.id === p.id)) {
           addError("id", "ID already exists.");
         }
@@ -117,7 +125,7 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
         if ((storageUnits.units || []).every(u => u.id !== p.toStorageId)) {
           addError("toStorageId", "ID does not exist.");
         }
-        if ((inventory.items || []).any(it => it.id === p.id && it.storageUnitId === p.toStorageId)) {
+        if ((inventory.items || []).some(it => it.id === p.id && it.storageUnitId === p.toStorageId)) {
           addError("toStorageId", "Cannot move to the same storage unit.");
         }
         break;
@@ -129,7 +137,7 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
         }else if((inventory.items || []).some(it => (it.id === p.id) && (it.name === p.name.trim()))) {
           addError("name", "Cannot rename to the same name.");
         }
-        if(!!p.name.trim()) {
+        if(!p.name.trim()) {
           addError("name", "Name cannot be empty.");
         }
         break;
@@ -153,7 +161,7 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
         }else if((storageUnits.items || []).some(it => (it.id === p.id) && (it.name === p.name.trim()))) {
           addError("name", "Cannot rename to the same name.");
         }
-        if(!!p.name.trim()) {
+        if(!p.name.trim()) {
           addError("name", "Name cannot be empty.");
         }
         break;
@@ -164,7 +172,14 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
           addError("id", "ID does not exist.");
         }
         const metaError = validateMeta(p.key, p.value);
-        if(metaError) addMetaError(p.key, metaError);
+        if(metaError) {
+          addMetaError(p.key, metaError);
+        } else {
+          const item = inventory.items.find((it) => it.id === p.id) || null;
+          if(item !== null && item.meta[p.key] === p.value) {
+            addMetaError(p.key, "Meta value has not changed.");
+          } 
+        }
         break;
       }
 
@@ -328,9 +343,9 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
     const action = createAction('create_item', payload);
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalInv } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setInventory(finalInv);
+      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setInventory(finalInv);
     }
     return errors;
   }
@@ -339,22 +354,22 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
     const action = createAction('delete_item', { id });
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalInv } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setInventory(finalInv);
+      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setInventory(finalInv);
     }
-    return errors
+    return errors;
   }
 
   function handleRenameItem(id, newName, validateOnly = false) {
     const action = createAction('rename_item', { id, name: newName });
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalInv } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setInventory(finalInv);
+      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setInventory(finalInv);
     }
-    return errors
+    return errors;
   }
 
   function handleCreateStorage(name, validateOnly = false) {
@@ -363,46 +378,46 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
     const action = createAction('create_storage', payload);
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalStor } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setStorageUnits(finalStor);
+      const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setStorageUnits(finalStor);
     }
-    return errors
+    return errors;
   }
 
   function handleDeleteStorage(id, validateOnly = false) {
     const action = createAction('delete_storage', { id });
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalInv, finalStor } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setStorageUnits(finalStor);
-        setInventory(finalInv);
+      const { finalInv, finalStor } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setStorageUnits(finalStor);
+      setInventory(finalInv);
     }
-    return errors
+    return errors;
   }
 
   function handleRenameStorage(id, newName, validateOnly = false) {
     const action = createAction('rename_storage', { id, name: newName });
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalStor } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setStorageUnits(finalStor);
+      const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setStorageUnits(finalStor);
     }
-    return errors
+    return errors;
   }
 
   function handleSetQuantity(id, qty, validateOnly = false) {
-    const amount = Math.max(0, Number(qty) || 0);
+    const amount = Number(qty || 0);
     const action = createAction('set_quantity', { id, qty: amount });
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalInv } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setInventory(finalInv);
+      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setInventory(finalInv);
     }
-    return errors
+    return errors;
   }
 
   function handleAddCount(id, amount, validateOnly = false) {
@@ -410,11 +425,11 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
     const action = createAction('add_count', payload);
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalInv } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setInventory(finalInv);
+      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setInventory(finalInv);
     }
-    return errors
+    return errors;
   }
 
   function handleMoveItem(id, toStorageId, validateOnly = false) {
@@ -422,55 +437,55 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
     const action = createAction('move_item', payload);
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalInv } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setInventory(finalInv);
+      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setInventory(finalInv);
     }
-    return errors
+    return errors;
   }
 
-  function handleSetItemMeta(id, key, value, inventory, storageUnits, enqueueAction, setInventory, validateOnly = false) {
+  function handleSetItemMeta(id, key, value, validateOnly = false) {
     const action = createAction('set_item_meta', { id, key, value });
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalInv } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setInventory(finalInv);
+      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setInventory(finalInv);
     }
-    return errors
+    return errors;
   }
 
-  function handleRemoveItemMeta(id, key, inventory, storageUnits, enqueueAction, setInventory, validateOnly = false) {
+  function handleRemoveItemMeta(id, key, validateOnly = false) {
     const action = createAction('remove_item_meta', { id, key });
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalInv } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setInventory(finalInv);
+      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setInventory(finalInv);
     }
-    return errors
+    return errors;
   }
 
-  function handleSetStorageMeta(id, key, value, inventory, storageUnits, enqueueAction, setStorageUnits, validateOnly = false) {
+  function handleSetStorageMeta(id, key, value, validateOnly = false) {
     const action = createAction('set_storage_meta', { id, key, value });
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalStor } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setStorageUnits(finalStor);
+      const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setStorageUnits(finalStor);
     }
-    return errors
+    return errors;
   }
 
-  function handleRemoveStorageMeta(id, key, inventory, storageUnits, enqueueAction, setStorageUnits, validateOnly = false) {
+  function handleRemoveStorageMeta(id, key, validateOnly = false) {
     const action = createAction('remove_storage_meta', { id, key });
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {
-        const { finalStor } = applyActionsToState([action], inventory, storageUnits);
-        enqueueAction(action);
-        setStorageUnits(finalStor);
+      const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+      enqueueAction(action);
+      setStorageUnits(finalStor);
     }
-    return errors
+    return errors;
   }
 
   return {
