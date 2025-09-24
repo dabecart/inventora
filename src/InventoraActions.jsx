@@ -20,7 +20,7 @@ import {simpleId, nowIso} from './Utils'
 //  - remove_storage_meta
 
 export default function InventoraActions(userId = '(anonymous)', inventory, setInventory, storageUnits, setStorageUnits, enqueueAction) {
-  function validateMeta(metaKey, metaValue) {
+  function validateItemsMeta(metaKey, metaValue) {
     switch(metaKey) {
       case 'link':
       case 'datasheet link': {
@@ -56,6 +56,23 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
     return 'Meta not supported.';
   }
 
+  function validateStoragesMeta(metaKey, metaValue) {
+    switch(metaKey) {
+      case 'photos': {
+        // TODO: Validate photos.
+        return null;
+      }
+
+      case 'location':
+      case 'capacity':
+      case 'description': {
+        if(!metaValue) return 'Cannot be empty.'
+        return null;
+      }
+    }
+    return 'Meta not supported.';
+  }
+
   function validateAction(action, inventory, storageUnits) {
     const p = action.payload || {};
     let errors = null;
@@ -74,14 +91,17 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
         if ((inventory.items || []).some(it => it.id === p.id)) {
           addError("id", "ID already exists.");
         }
+        if (!p.name.trim()) {
+          addError("name", "Name cannot be empty.");
+        }
         if (p.initialQty < 0) {
           addError("qty", "Quantity cannot be negative.");
         }
         if (p.storageUnitId && (storageUnits.units || []).every(u => u.id !== p.storageUnitId)) {
           addError("storageUnitId", "The storage unit does not exist.");
         }
-        for([metaKey, metaValue] of Object.entries(p.meta)) {
-          const metaError = validateMeta(metaKey, metaValue);
+        for(const [metaKey, metaValue] of Object.entries(p.meta)) {
+          const metaError = validateItemsMeta(metaKey, metaValue);
           if(metaError) addMetaError(metaKey, metaError);
         }
         break;
@@ -97,6 +117,13 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
       case 'create_storage': {
         if((storageUnits.units || []).some(u => u.id === p.id)) {
           addError("id", "ID already exists.");
+        }
+        if (!p.name.trim()) {
+          addError("name", "Name cannot be empty.");
+        }
+        for(const [metaKey, metaValue] of Object.entries(p.meta)) {
+          const metaError = validateStoragesMeta(metaKey, metaValue);
+          if(metaError) addMetaError(metaKey, metaError);
         }
         break;
       }
@@ -171,7 +198,7 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
         if ((inventory.items || []).every(it => it.id !== p.id)) {
           addError("id", "ID does not exist.");
         }
-        const metaError = validateMeta(p.key, p.value);
+        const metaError = validateItemsMeta(p.key, p.value);
         if(metaError) {
           addMetaError(p.key, metaError);
         } else {
@@ -199,7 +226,7 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
         if ((storageUnits.items || []).every(it => it.id !== p.id)) {
           addError("id", "ID does not exist.");
         }
-        const metaError = validateMeta(p.key, p.value);
+        const metaError = validateStoragesMeta(p.key, p.value);
         if(metaError) addMetaError(p.key, metaError);
         break;
       }
@@ -372,9 +399,9 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
     return errors;
   }
 
-  function handleCreateStorage(name, validateOnly = false) {
+  function handleCreateStorage(name, meta, validateOnly = false) {
     const id = `s-${simpleId()}`;
-    const payload = { id, name };
+    const payload = { id, name, meta };
     const action = createAction('create_storage', payload);
     const errors = validateAction(action, inventory, storageUnits);
     if(!errors && !validateOnly) {

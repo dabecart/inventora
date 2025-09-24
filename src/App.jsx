@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {  
     Pencil,
     Trash2,
+    LogIn,
     LogOut,
     UploadCloud,
     Search,
@@ -22,7 +23,9 @@ export default function InventoraClient() {
   const [mergeLog, setMergeLog] = useState([]);
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
+  const [creatingItem, setCreatingItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
+  const [creatingStorage, setCreatingStorage] = useState(null);
   const [editingStorage, setEditingStorage] = useState(null);
 
   const {
@@ -71,8 +74,8 @@ export default function InventoraClient() {
   }
 
   // ---------------- Validation functions -------------------
-  function validateFromNewForm(name, initialQty, storageUnitId, meta) {
-    return newItemFromForm(name, initialQty, storageUnitId, meta, true) || null;
+  function validateItemFromNewForm(name, initialQty, storageUnitId, meta) {
+    return handleCreateItem(name, initialQty, storageUnitId, meta, true) || null;
   }
 
   function validateItemFromEditForm(name, qty, storageUnitId, meta) {
@@ -121,6 +124,10 @@ export default function InventoraClient() {
     return errors;
   }
 
+  function validateStorageFromNewForm(name, meta) {
+    return handleCreateStorage(name, meta, true) || null;
+  }
+
   function validateStorageFromEditForm(name, meta) {
     const nameErrors      = (editingStorage.name !== name) ? 
                             handleRenameStorage(editingStorage.id, name, true) || null : 
@@ -163,17 +170,30 @@ export default function InventoraClient() {
 
   // ---------------- Render UI ----------------
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Inventora</h1>
-      <div className="mb-4 flex">
-        <button onClick={handleAuthButton} className="px-3 py-1 rounded bg-blue-600 text-white mr-2">
-          {signedIn ? 'Log out' : 'Sign in'}
-        </button>
-        <button onClick={manualPush} className="px-3 py-1 rounded bg-green-600 text-white mr-2">Push</button>
-        <div className="ml-4 text-sm text-white flex flex-col grow items-end">
-          <p>User: {userId || '(anonymous)'}</p>      
-          <span>Status: {status}</span>
+    <div className="p-6 max-w-5xl w-full mx-auto">
+      <header className="flex items-center justify-between my-6">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold" title="Manage your inventory cleanly">Inventora</h1>
         </div>
+
+        <div className="flex items-center gap-2">
+          {(localPendingActions.current || []).length === 0 ?
+            <IconButton title="Nothing to push" className='bg-gray-600 text-white' disabled={true}><UploadCloud /></IconButton>
+            :
+            <IconButton title="Push pending" onClick={manualPush} className='bg-green-600 text-white'><UploadCloud /></IconButton>
+          }
+
+          {signedIn ? 
+            <IconButton title="Log out" onClick={handleAuthButton} className="bg-red-600 text-white"><LogOut /></IconButton>
+            :
+            <IconButton title="Log in" onClick={handleAuthButton} className="bg-blue-600 text-white"><LogIn /></IconButton>
+          }
+        </div>
+      </header>
+
+      <div className="ml-4 text-sm text-white flex flex-col grow items-end">
+        <p>User: {userId || '(anonymous)'}</p>      
+        <span>Status: {status}</span>
       </div>
 
       {updateAvailable && (
@@ -199,14 +219,19 @@ export default function InventoraClient() {
       )}
 
       <div className="mt-6 p-4 border rounded">
-        <h2 className="font-semibold">Items</h2>
-        <table className="w-full mt-3 table-auto text-sm">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-lg font-semibold">Items</h2>
+          <div className="flex gap-2">
+            <IconButton title="Find items" onClick={() => setShowFindItems(s => !s)} className="bg-gray-700 text-white"><Search /></IconButton>
+            <IconButton title="Create item" onClick={() => setCreatingItem(true)} className="bg-blue-600 text-white"><Plus /></IconButton>
+          </div>
+        </div>
+        <table className="text-left w-full mt-3 table-auto text-sm">
           <thead>
-            <tr className="text-left">
+            <tr>
               <th>Name</th>
               <th>Qty</th>
               <th>Storage</th>
-              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -217,11 +242,11 @@ export default function InventoraClient() {
                   <td title={it.id}>{it.name}</td>
                   <td>{it.qty}</td>
                   <td title={it.storageUnitId}>{storage ? storage.name : "(no storage)"}</td>
-                  <td className="flex gap-1 my-1">
-                    <button onClick={() => handleAddCount(it.id, 1)} className="p-1 rounded bg-green-600 text-white text-xs"><Plus size={14} /></button>
-                    <button onClick={() => handleAddCount(it.id, -1)} className="p-1 rounded bg-orange-500 text-white text-xs" disabled={it.qty === 0}><Minus size={14} /></button>
-                    <button onClick={() => setEditingItem(it)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={14} /></button>
-                    <button onClick={() => handleDeleteItem(it.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={14} /></button>
+                  <td className="flex gap-1 my-1 justify-end">
+                    <button onClick={() => handleAddCount(it.id, 1)} className="p-1 rounded bg-green-600 text-white text-xs"><Plus size={16} /></button>
+                    <button onClick={() => handleAddCount(it.id, -1)} className="p-1 rounded bg-orange-500 text-white text-xs" disabled={it.qty === 0}><Minus size={16} /></button>
+                    <button onClick={() => setEditingItem(it)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={16} /></button>
+                    <button onClick={() => handleDeleteItem(it.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={16} /></button>
                   </td>
                 </tr>
               );
@@ -231,20 +256,39 @@ export default function InventoraClient() {
       </div>
 
       <div className="mt-6 p-4 border rounded">
-        <h2 className="font-semibold">Storage Units</h2>
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-lg font-semibold">Storage Units</h2>
+          <div className="flex gap-2">
+            <IconButton title="Create storage" onClick={() => setCreatingStorage(true)} className="bg-blue-600 text-white"><Plus /></IconButton>
+          </div>
+        </div>
         <ul className="mt-3">
           {storageUnits.units && storageUnits.units.length ?
             storageUnits.units.map(u => (
               <li key={u.id} className="flex justify-between items-center py-1 border-b">
                 <div title={u.id}>{u.name}<span className="text-xs text-gray-500 ml-1">({u.id})</span></div>
                 <div className="flex gap-1">
-                  <button onClick={() => setEditingStorage(u)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={14} /></button>
-                  <button onClick={() => handleDeleteStorage(u.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={14} /></button>
+                  <button onClick={() => setEditingStorage(u)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={16} /></button>
+                  <button onClick={() => handleDeleteStorage(u.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={16} /></button>
                 </div>
               </li>
             )) : <li className="text-sm text-gray-500">No storage units</li>}
         </ul>
       </div>
+
+      {creatingItem && (
+        <EditItemModal
+          title="Create item"
+          storageUnits={storageUnits.units}
+          onSave={(updated) => {
+            // Apply everything in bulk.
+            handleCreateItem(updated.name, updated.qty, updated.storageUnitId, updated.meta);
+            setCreatingItem(null);
+          }}
+          onDiscard={() => setCreatingItem(null)}
+          validationFunction={validateItemFromNewForm}
+        />
+      )}
 
       {editingItem && (
         <EditItemModal
@@ -267,6 +311,19 @@ export default function InventoraClient() {
           }}
           onDiscard={() => setEditingItem(null)}
           validationFunction={validateItemFromEditForm}
+        />
+      )}
+
+      {creatingStorage && (
+        <EditStorageModal
+          title="Create storage"
+          onSave={(updated) => {
+            // Apply everything in bulk.
+            handleCreateStorage(updated.name, updated.meta);
+            setCreatingStorage(null);
+          }}
+          onDiscard={() => setCreatingStorage(null)}
+          validationFunction={validateStorageFromNewForm}
         />
       )}
 
@@ -319,16 +376,24 @@ function FieldError({ text }) {
   return <div className="text-xs text-red-400 mt-1">{text}</div>;
 }
 
+function IconButton({ title, onClick, children, className = '', isDisabled = false }) {
+  return (
+    <button onClick={onClick} disabled={isDisabled} title={title} className={`p-2 rounded-md hover:opacity-90 ${className}`}>
+      {children}
+    </button>
+  );
+}
+
 function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], onSave, onDiscard, validationFunction }) {
   const [name, setName] = useState(item.name || '');
   const [qty, setQty] = useState(item.qty ?? 0);
   const [storageId, setStorageId] = useState(item.storageUnitId || '');
   const [meta, setMeta] = useState({ ...(item.meta || {}) });
 
-  const errors = validationFunction(name, Number(qty), storageId, meta);
+  const errors = validationFunction(name, Number(qty), storageId, meta) || {};
 
   function handleSave() {
-    const formErr = validationFunction(name, Number(qty), storageId, meta);
+    const formErr = validationFunction(name, Number(qty), storageId, meta) || {};
     if(Object.keys(formErr).length === 0){
       onSave({ 
         name: name.trim(), 
@@ -389,10 +454,10 @@ function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard
   const [name, setName] = useState(unit.name || '');
   const [meta, setMeta] = useState({ ...(unit.meta || {}) });
 
-  const errors = validationFunction(name, meta);
+  const errors = validationFunction(name.trim(), meta) || {};
 
   function handleSave() {
-    const formErr = validationFunction(name.trim(), meta);
+    const formErr = validationFunction(name.trim(), meta) || {};
     if(Object.keys(formErr).length === 0){
       onSave({ name: name.trim(), meta });
     }
@@ -454,7 +519,7 @@ function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, valida
     <div>
       <div className="space-y-2">
         {Object.entries(meta).map(([k, v]) => (
-          <div key={k} className="flex gap-2 items-start">
+          <div key={k} className="flex gap-2 items-start items-center">
             <div className="w-36 text-sm text-gray-300">{k}</div>
             {k === 'photos' ? (
               <PhotoMetaEditor value={v} onChange={(val) => setKeyValue(k, val)} validationErrors={validationErrors} />
@@ -468,7 +533,8 @@ function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, valida
                 <FieldError text={validationErrors[k]} />
               </div>
             )}
-            <button onClick={() => removeKey(k)} className="px-2 py-1 text-sm text-red-400"><Trash2 size={14}/></button>
+
+            <button onClick={() => removeKey(k)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={16} /></button>
           </div>
         ))}
       </div>
@@ -483,7 +549,7 @@ function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, valida
 }
 
 function PhotoMetaEditor({ value = [], onChange, validationErrors }) {
-  // value is array of { id, src } where src can be dataURL or remote url
+  // Value is array of { id, src } where src can be dataURL or remote url
   const [items, setItems] = useState(Array.isArray(value) ? value.slice() : []);
 
   useEffect(() => onChange && onChange(items), [items]);
@@ -516,7 +582,7 @@ function PhotoMetaEditor({ value = [], onChange, validationErrors }) {
         {items.map(it => (
           <div key={it.id} className="relative border rounded overflow-hidden">
             <img src={it.src} alt="meta" className="object-cover w-full h-24" />
-            <button onClick={() => removeItem(it.id)} className="absolute top-1 right-1 bg-black bg-opacity-50 p-1 rounded text-white"><XIcon size={12} /></button>
+            <button onClick={() => removeItem(it.id)} className="absolute top-1 right-1 bg-black bg-opacity-50 p-1 rounded text-white"><XIcon size={16} /></button>
           </div>
         ))}
       </div>
