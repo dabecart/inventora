@@ -35,7 +35,7 @@ export default function EditStorageModal({ title = 'Edit Storage', unit = {}, me
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg w-full max-w-xl p-6 m-2">
+      <div className="bg-gray-900 text-gray-900 text-white rounded-lg w-full max-w-xl p-6 m-2">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-semibold">{title}</h3>
           <button onClick={onDiscard} className="p-2 rounded-md"><XIcon /></button>
@@ -44,13 +44,13 @@ export default function EditStorageModal({ title = 'Edit Storage', unit = {}, me
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-gray-400 mb-1">Name</label>
-            <input value={name} onChange={e => setName(e.target.value)} className={`w-full px-3 py-2 rounded border ${errors.name ? 'border-red-500' : 'border-gray-300'} bg-gray-50 dark:bg-gray-800`} />
+            <input value={name} onChange={e => setName(e.target.value)} className={`w-full px-3 py-2 rounded border ${errors.name ? 'border-red-500' : 'border-gray-300'} bg-gray-800`} />
             <FieldError text={errors.name} />
           </div>
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">Meta</label>
-            <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded">
+            <div className="p-2 bg-gray-800 rounded">
               <MetaEditor meta={meta} allowedKeys={metaKeys} onChange={m => setMeta(m)} validationErrors={errors.meta || {}} />
             </div>
           </div>

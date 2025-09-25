@@ -45,7 +45,7 @@ export default function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], o
                 <input 
                   value={v} 
                   onChange={e => setKeyValue(k, e.target.value)} 
-                  className={`col-span-5 w-full px-3 py-2 rounded border text-sm ${validationErrors[k] ? 'border-red-500' : 'border-gray-300'} bg-gray-50 dark:bg-gray-800`} 
+                  className={`col-span-5 w-full px-3 py-2 rounded border text-sm ${validationErrors[k] ? 'border-red-500' : 'border-gray-300'} bg-gray-800`} 
                 />
                 <IconButton title={`Delete meta "${k}"`}  onClick={() => removeKey(k)} className='bg-red-600 text-white'><Trash2 /></IconButton>
               </div>

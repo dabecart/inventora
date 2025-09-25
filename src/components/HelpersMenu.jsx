@@ -7,7 +7,7 @@ import FoodHelper from "./helpers/FoodHelper";
 import ManualHelper from "./helpers/ManualHelper";
 
 export default function HelpersMenu({ onSave, onClose, storageUnits, metaKeys, validationFunction, handleCreateItem}) {
-  const buttonClass = "flex flex-col items-center justify-center gap-2 p-4 rounded-2xl shadow-md w-full h-full bg-white dark:bg-gray-800 border hover:shadow-lg";
+  const buttonClass = "flex flex-col items-center justify-center gap-2 p-4 rounded-2xl shadow-md w-full h-full bg-gray-800 border hover:shadow-lg";
   const [view, setView] = React.useState("menu"); // "menu" | "food" | "electronics" | "manual"
   const [previousState, setPreviousState] = useState([]);
 
@@ -58,7 +58,7 @@ export default function HelpersMenu({ onSave, onClose, storageUnits, metaKeys, v
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-lg p-6 w-full max-w-3xl">
+      <div className="bg-gray-900 rounded-lg p-6 w-full max-w-3xl">
         <div className="flex justify-between items-center mb-4">
           <button onClick={goToPreviousState} className="p-2 rounded-md mr-2"><ChevronLeft /></button>
           <h3 className="text-xl font-semibold">{menuNames[view]}</h3>

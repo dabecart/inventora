@@ -68,7 +68,7 @@ export default function FoodHelper({ storageUnits = [], onBack, openEditModal })
   }
 
   return (
-    <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg w-full max-w-3xl p-6 m-2 relative">
+    <div className="bg-gray-900 text-gray-900 text-white rounded-lg w-full max-w-3xl p-6 m-2 relative">
       {!barcode ? (
         <div className="grid grid-rows-1 sm:grid-cols-2 gap-4">
           <div>
