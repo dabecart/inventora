@@ -22,6 +22,7 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
 
   const itemMetaKeys    = ['Description', 'Tags','Part Number','Serial Number','Link','Manufacturer','Datasheet Link','Photos'];
   const storageMetaKeys = ['Location','Capacity','Description','Photos'];
+  const MAX_PHOTOS_COUNT = 5;
 
   function validateItemsMeta(metaKey, metaValue) {
     switch(metaKey) {
@@ -39,7 +40,9 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
       }
 
       case 'Photos': {
-        // TODO: Validate Photos.
+        if (!Array.isArray(metaValue)) return 'Photos must be uploaded images.';
+        if (metaValue.length == 0) return `Upload up to ${MAX_PHOTOS_COUNT} photos.`;
+        if (metaValue.length > MAX_PHOTOS_COUNT) return `Too many photos (max ${MAX_PHOTOS_COUNT}).`;
         return null;
       }
 
@@ -63,7 +66,9 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
   function validateStoragesMeta(metaKey, metaValue) {
     switch(metaKey) {
       case 'Photos': {
-        // TODO: Validate Photos.
+        if (!Array.isArray(metaValue)) return 'Photos must be uploaded images.';
+        if (metaValue.length == 0) return `Upload up to ${MAX_PHOTOS_COUNT} photos.`;
+        if (metaValue.length > MAX_PHOTOS_COUNT) return `Too many photos (maximum ${MAX_PHOTOS_COUNT}).`;
         return null;
       }
 

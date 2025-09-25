@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 // Icons.
 import {  
     Pencil,
@@ -11,11 +11,11 @@ import {
     Minus,
     Camera,
     Image as ImageIcon,
-    X as XIcon,
-    Check
+    X as XIcon
 } from "lucide-react";
 
 import Inventora from './Inventora'
+import { simpleId } from "./Utils";
 
 export default function InventoraClient() {
   const [status, setStatus] = useState("Not signed in");
@@ -417,7 +417,7 @@ function FieldError({ text, className = '' }) {
 
 function IconButton({ title, onClick, children, className = '', isDisabled = false }) {
   return (
-    <button onClick={onClick} disabled={isDisabled} title={title} className={`flex justify-center p-2 rounded-md hover:opacity-90 ${className}`}>
+    <button onClick={onClick} disabled={isDisabled} title={title} className={`flex items-center justify-center p-1 rounded-md hover:opacity-90 h-full ${className}`}>
       {children}
     </button>
   );
@@ -561,12 +561,11 @@ function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, valida
         <div key={k} className="flex flex-col">
           <label className="block text-sm text-gray-400 mb-1">{k}</label>
           <div>
-            {k === 'photos' ? (
-              <div className="grid grid-cols-6 gap-3">
+            {k === 'Photos' ? (
+              <div className="grid grid-cols-6 gap-3 items-stretch">
                 <PhotoMetaEditor
                   value={v}
                   onChange={val => setKeyValue(k, val)}
-                  validationError={validationErrors[k]}
                   className="col-span-5"
                 />
                 <IconButton title={`Delete meta "${k}"`}  onClick={() => removeKey(k)} className='bg-red-600 text-white'><Trash2 /></IconButton>
@@ -606,70 +605,201 @@ function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, valida
   );
 }
 
-function PhotoMetaEditor({ value = [], onChange, validationError, className = '' }) {
+function PhotoMetaEditor({ value = [], onChange, className = '', maxSizeKB = 1024 }) {
   const [items, setItems] = useState(Array.isArray(value) ? value.slice() : []);
+  // For full-screen preview
+  const [preview, setPreview] = useState(null); 
+  // For dropping images.
+  const [isHighlighted, setIsHighlighted] = useState(false);
+  const dropRef = useRef();
+  const dragCounter = useRef(0);
 
   useEffect(() => onChange && onChange(items), [items]);
 
-  function addFromFile(file) {
+  // --- Image helpers ---
+  function resizeAndCompress(file, callback) {
     const reader = new FileReader();
-    reader.onload = () => {
-      setItems(it => [...it, { id: `p-${simpleId()}`, src: reader.result }]);
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        // Target dimensions: keep aspect ratio, max ~1200px wide.
+        const maxDim = 1200;
+        let { width, height } = img;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Compress quality adaptively.
+        let quality = 0.9;
+        let dataUrl;
+        do {
+          dataUrl = canvas.toDataURL("image/jpeg", quality);
+          const sizeKB = Math.round((dataUrl.length * 3) / 4 / 1024);
+          if (sizeKB / 1024 <= maxSizeKB) break;
+          quality -= 0.1;
+        } while (quality > 0.3);
+
+        callback(dataUrl);
+      };
+      img.src = e.target.result;
     };
     reader.readAsDataURL(file);
+  }
+
+  function addFromFile(file) {
+    resizeAndCompress(file, result => {
+      setItems(it => [...it, { id: `p-${simpleId()}`, src: result }]);
+    });
+  }
+
+  function handleFiles(files) {
+    for (const file of files) {
+      if (file.type.startsWith("image/")) {
+        addFromFile(file);
+      }
+    }
   }
 
   function removeItem(id) {
     setItems(it => it.filter(i => i.id !== id));
   }
 
+  // --- Drag & Drop ---
+  useEffect(() => {
+    const container = dropRef.current;
+    if (!container) return;
+
+    const dropZone = container.querySelector('.photo-drop-zone') || container;
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    function onDragEnter(e) {
+      preventDefaults(e);
+      dragCounter.current++;
+      setIsHighlighted(true);
+    }
+    function onDragLeave(e) {
+      preventDefaults(e);
+      dragCounter.current = Math.max(0, dragCounter.current - 1);
+      if (dragCounter.current === 0) setIsHighlighted(false);
+    }
+    function onDrop(e) {
+      preventDefaults(e);
+      setIsHighlighted(false);
+      dragCounter.current = 0;
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) handleFiles(dt.files);
+    }
+    function onDragOver(e) {
+      preventDefaults(e);
+    }
+
+    ['dragenter'].forEach(ev => dropZone.addEventListener(ev, onDragEnter));
+    ['dragleave'].forEach(ev => dropZone.addEventListener(ev, onDragLeave));
+    ['dragover'].forEach(ev => dropZone.addEventListener(ev, onDragOver));
+    ['drop'].forEach(ev => dropZone.addEventListener(ev, onDrop));
+
+    return () => {
+      ['dragenter'].forEach(ev => dropZone.removeEventListener(ev, onDragEnter));
+      ['dragleave'].forEach(ev => dropZone.removeEventListener(ev, onDragLeave));
+      ['dragover'].forEach(ev => dropZone.removeEventListener(ev, onDragOver));
+      ['drop'].forEach(ev => dropZone.removeEventListener(ev, onDrop));
+    };
+  }, []);
+
   return (
-    <div className={`w-full space-y-2 relative ${className}`}>
-      <div className="flex gap-2">
-        <label className="flex items-center gap-2 px-3 py-2 bg-gray-700 rounded cursor-pointer">
-          <Camera size={18} />
-          <input
-            accept="image/*"
-            capture="environment"
-            type="file"
-            onChange={e => {
-              if (e.target.files && e.target.files[0]) addFromFile(e.target.files[0]);
-              e.target.value = null;
-            }}
-            className="hidden"
-          />
-        </label>
-        <label className="flex items-center gap-2 px-3 py-2 bg-gray-700 rounded cursor-pointer">
-          <ImageIcon size={18} />
-          <input
-            accept="image/*"
-            type="file"
-            onChange={e => {
-              if (e.target.files && e.target.files[0]) addFromFile(e.target.files[0]);
-              e.target.value = null;
-            }}
-            className="hidden"
-          />
-        </label>
+    <div ref={dropRef} className={`w-full h-full space-y-2 relative ${className}`}>
+      <div
+        className={`border-2 rounded-md p-4 flex items-center justify-center text-center transition-colors ${isHighlighted ? "border-solid border-blue-500" : "border-dashed border-gray-600"}`}
+      >
+        <div className="flex gap-3 items-center">
+          <label className="flex items-center gap-2 px-3 py-2 bg-gray-700 rounded cursor-pointer">
+            <Camera size={18} />
+            <input
+              accept="image/*"
+              capture="environment"
+              type="file"
+              multiple
+              onChange={e => {
+                if (e.target.files) handleFiles(e.target.files);
+                e.target.value = null;
+              }}
+              className="hidden"
+            />
+          </label>
+          <label className="flex items-center gap-2 px-3 py-2 bg-gray-700 rounded cursor-pointer">
+            <ImageIcon size={18} />
+            <input
+              accept="image/*"
+              type="file"
+              multiple
+              onChange={e => {
+                if (e.target.files) handleFiles(e.target.files);
+                e.target.value = null;
+              }}
+              className="hidden"
+            />
+          </label>
+          <span className="text-xs text-gray-400">Drag & drop images here</span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {items.map(it => (
-          <div key={it.id} className="relative border rounded overflow-hidden">
-            <img src={it.src} alt="meta" className="object-cover w-full h-24" />
-            <button
-              onClick={() => removeItem(it.id)}
-              className="absolute top-1 right-1 bg-black bg-opacity-50 p-2 rounded text-white"
+      {/* Thumbnails */}
+      {
+        items.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {items.map(it => (
+            <div
+              key={it.id}
+              className="relative border rounded overflow-hidden cursor-pointer"
+              onClick={() => setPreview(it.src)}
             >
-              <XIcon size={14} />
-            </button>
-          </div>
-        ))}
-      </div>
+              <img src={it.src} alt="meta" className="object-cover w-full h-24" />
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  removeItem(it.id);
+                }}
+                className="absolute top-1 right-1 bg-black bg-opacity-50 p-2 rounded text-white"
+              >
+                <XIcon size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+        )
+      }
 
-      {validationError && (
-        <div className="absolute -bottom-4 left-0 text-xs text-red-400">
-          {validationError}
+      {/* Fullscreen Preview */}
+      {preview && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50"
+          onClick={() => setPreview(null)}
+        >
+          <img
+            src={preview}
+            alt="preview"
+            className="max-w-full max-h-full cursor-pointer"
+          />
+          <button
+            onClick={() => setPreview(null)}
+            className="absolute top-4 right-4 bg-black bg-opacity-70 p-2 rounded text-white"
+          >
+            <XIcon size={20} />
+          </button>
         </div>
       )}
     </div>
