@@ -183,9 +183,9 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
       }
 
       case 'rename_storage': {
-        if ((storageUnits.items || []).every(it => it.id !== p.id)) {
+        if ((storageUnits.units || []).every(it => it.id !== p.id)) {
           addError("id", "ID does not exist.");
-        }else if((storageUnits.items || []).some(it => (it.id === p.id) && (it.name === p.name.trim()))) {
+        }else if((storageUnits.units || []).some(it => (it.id === p.id) && (it.name === p.name.trim()))) {
           addError("name", "Cannot rename to the same name.");
         }
         if(!p.name.trim()) {
@@ -223,7 +223,7 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
       }
 
       case 'set_storage_meta': {
-        if ((storageUnits.items || []).every(it => it.id !== p.id)) {
+        if ((storageUnits.units || []).every(it => it.id !== p.id)) {
           addError("id", "ID does not exist.");
         }
         const metaError = validateStoragesMeta(p.key, p.value);
@@ -232,10 +232,10 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
       }
 
       case 'remove_storage_meta': {
-        if ((storageUnits.items || []).every(it => it.id !== p.id)) {
+        if ((storageUnits.units || []).every(it => it.id !== p.id)) {
           addError("id", "ID does not exist.");
         }else {
-          const meta = (storageUnits.items || []).find(it => it.id === p.id).meta;
+          const meta = (storageUnits.units || []).find(it => it.id === p.id).meta;
           if(!(p.key in meta)) {
             addError("key", "This meta is not in the storage unit.");
           }

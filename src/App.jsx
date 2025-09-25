@@ -259,7 +259,7 @@ export default function InventoraClient() {
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold">Storage Units</h2>
           <div className="flex gap-2">
-            <IconButton title="Create storage" onClick={() => setCreatingStorage(true)} className="bg-blue-600 text-white"><Plus /></IconButton>
+            <IconButton title="Create storage unit" onClick={() => setCreatingStorage(true)} className="bg-blue-600 text-white"><Plus /></IconButton>
           </div>
         </div>
         <ul className="mt-3">
@@ -316,7 +316,7 @@ export default function InventoraClient() {
 
       {creatingStorage && (
         <EditStorageModal
-          title="Create storage"
+          title="Create Storage Unit"
           onSave={(updated) => {
             // Apply everything in bulk.
             handleCreateStorage(updated.name, updated.meta);
@@ -371,14 +371,14 @@ export default function InventoraClient() {
   );
 }
 
-function FieldError({ text }) {
+function FieldError({ text, className = '' }) {
   if (!text) return null;
-  return <div className="text-xs text-red-400 mt-1">{text}</div>;
+  return <div className={`text-xs text-red-400 mt-1 ${className}`}>{text}</div>;
 }
 
 function IconButton({ title, onClick, children, className = '', isDisabled = false }) {
   return (
-    <button onClick={onClick} disabled={isDisabled} title={title} className={`p-2 rounded-md hover:opacity-90 ${className}`}>
+    <button onClick={onClick} disabled={isDisabled} title={title} className={`flex justify-center p-2 rounded-md hover:opacity-90 ${className}`}>
       {children}
     </button>
   );
@@ -410,14 +410,14 @@ function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], onSa
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg w-full max-w-2xl p-6">
+      <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg w-full max-w-2xl p-6 m-2">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-semibold">{title}</h3>
           <button onClick={onDiscard} className="p-2 rounded-md"><XIcon /></button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="w-full">
             <label className="block text-sm text-gray-400 mb-1">Name</label>
             <input value={name} onChange={e => setName(e.target.value)} className={`w-full px-3 py-2 rounded border ${errors.name ? 'border-red-500' : 'border-gray-300'} bg-gray-50 dark:bg-gray-800`} />
             <FieldError text={errors.name} />
@@ -433,8 +433,8 @@ function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], onSa
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">Meta</label>
+          <div className="w-full">
+            <label className="block text-sm text-gray-400 mb-1">Meta</label>
             <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded">
               <MetaEditor meta={meta} allowedKeys={metaKeys} onChange={m => setMeta(m)} validationErrors={errors.meta || {}} />
             </div>
@@ -468,7 +468,7 @@ function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg w-full max-w-xl p-6">
+      <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-lg w-full max-w-xl p-6 m-2">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-semibold">{title}</h3>
           <button onClick={onDiscard} className="p-2 rounded-md"><XIcon /></button>
@@ -482,7 +482,7 @@ function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Meta</label>
+            <label className="block text-sm text-gray-400 mb-1">Meta</label>
             <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded">
               <MetaEditor meta={meta} allowedKeys={storageMetaKeys} onChange={m => setMeta(m)} validationErrors={errors.meta || {}} />
             </div>
@@ -498,7 +498,7 @@ function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard
   );
 }
 
-function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, validationErrors }) {
+function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, validationErrors = {} }) {
   const [meta, setMeta] = useState({ ...initialMeta });
   const available = allowedKeys.filter(k => !(k in meta));
 
@@ -508,7 +508,11 @@ function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, valida
     setMeta(m => ({ ...m, [key]: value }));
   }
   function removeKey(key) {
-    setMeta(m => { const n = { ...m }; delete n[key]; return n; });
+    setMeta(m => {
+      const n = { ...m };
+      delete n[key];
+      return n;
+    });
   }
   function addKey(key) {
     if (!key) return;
@@ -516,40 +520,57 @@ function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, valida
   }
 
   return (
-    <div>
-      <div className="space-y-2">
-        {Object.entries(meta).map(([k, v]) => (
-          <div key={k} className="flex gap-2 items-start items-center">
-            <div className="w-36 text-sm text-gray-300">{k}</div>
+    <div className="space-y-2 overflow-y-auto max-h-64">
+      {Object.entries(meta).map(([k, v]) => (
+        <div key={k} className="flex flex-col">
+          <label className="block text-sm text-gray-400 mb-1">{k}</label>
+          <div>
             {k === 'photos' ? (
-              <PhotoMetaEditor value={v} onChange={(val) => setKeyValue(k, val)} validationErrors={validationErrors} />
-            ) : (
-              <div className="flex-1">
-                <input
+              <div className="grid grid-cols-6 gap-3">
+                <PhotoMetaEditor
                   value={v}
-                  onChange={e => setKeyValue(k, e.target.value)}
-                  className="w-full px-2 py-1 rounded bg-gray-800 text-white border border-gray-700"
+                  onChange={val => setKeyValue(k, val)}
+                  validationError={validationErrors[k]}
+                  className="col-span-5"
                 />
-                <FieldError text={validationErrors[k]} />
+                <IconButton title={`Delete meta "${k}"`}  onClick={() => removeKey(k)} className='bg-red-600 text-white'><Trash2 /></IconButton>
+              </div>
+            ) : (
+              <div className="grid grid-cols-6 gap-3">
+                <input 
+                  value={v} 
+                  onChange={e => setKeyValue(k, e.target.value)} 
+                  className={`col-span-5 w-full px-3 py-2 rounded border text-sm ${validationErrors[k] ? 'border-red-500' : 'border-gray-300'} bg-gray-50 dark:bg-gray-800`} 
+                />
+                <IconButton title={`Delete meta "${k}"`}  onClick={() => removeKey(k)} className='bg-red-600 text-white'><Trash2 /></IconButton>
               </div>
             )}
 
-            <button onClick={() => removeKey(k)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={16} /></button>
+            <FieldError text={validationErrors[k]} />
+
           </div>
-        ))}
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        <select defaultValue="" className="px-2 py-1 bg-gray-800 text-white border border-gray-700 rounded" onChange={e => addKey(e.target.value)}>
+        </div>
+      ))}
+
+      <div>
+        <select
+          defaultValue=""
+          className="px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded"
+          onChange={e => addKey(e.target.value)}
+        >
           <option value="">Add meta...</option>
-          {available.map(k => <option key={k} value={k}>{k}</option>)}
+          {available.map(k => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
         </select>
       </div>
     </div>
   );
 }
 
-function PhotoMetaEditor({ value = [], onChange, validationErrors }) {
-  // Value is array of { id, src } where src can be dataURL or remote url
+function PhotoMetaEditor({ value = [], onChange, validationError, className = '' }) {
   const [items, setItems] = useState(Array.isArray(value) ? value.slice() : []);
 
   useEffect(() => onChange && onChange(items), [items]);
@@ -567,26 +588,54 @@ function PhotoMetaEditor({ value = [], onChange, validationErrors }) {
   }
 
   return (
-    <div className="space-y-2 w-full">
+    <div className={`w-full space-y-2 relative ${className}`}>
       <div className="flex gap-2">
         <label className="flex items-center gap-2 px-3 py-2 bg-gray-700 rounded cursor-pointer">
-          <Camera size={16} />
-          <input accept="image/*" capture="environment" type="file" onChange={e => { if (e.target.files && e.target.files[0]) addFromFile(e.target.files[0]); e.target.value = null; }} className="hidden" />
+          <Camera size={18} />
+          <input
+            accept="image/*"
+            capture="environment"
+            type="file"
+            onChange={e => {
+              if (e.target.files && e.target.files[0]) addFromFile(e.target.files[0]);
+              e.target.value = null;
+            }}
+            className="hidden"
+          />
         </label>
         <label className="flex items-center gap-2 px-3 py-2 bg-gray-700 rounded cursor-pointer">
-          <ImageIcon size={16} />
-          <input accept="image/*" type="file" onChange={e => { if (e.target.files && e.target.files[0]) addFromFile(e.target.files[0]); e.target.value = null; }} className="hidden" />
+          <ImageIcon size={18} />
+          <input
+            accept="image/*"
+            type="file"
+            onChange={e => {
+              if (e.target.files && e.target.files[0]) addFromFile(e.target.files[0]);
+              e.target.value = null;
+            }}
+            className="hidden"
+          />
         </label>
       </div>
-      <div className="grid grid-cols-3 gap-2">
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {items.map(it => (
           <div key={it.id} className="relative border rounded overflow-hidden">
             <img src={it.src} alt="meta" className="object-cover w-full h-24" />
-            <button onClick={() => removeItem(it.id)} className="absolute top-1 right-1 bg-black bg-opacity-50 p-1 rounded text-white"><XIcon size={16} /></button>
+            <button
+              onClick={() => removeItem(it.id)}
+              className="absolute top-1 right-1 bg-black bg-opacity-50 p-2 rounded text-white"
+            >
+              <XIcon size={14} />
+            </button>
           </div>
         ))}
       </div>
-      <FieldError text={validationErrors.photo} />
+
+      {validationError && (
+        <div className="absolute -bottom-4 left-0 text-xs text-red-400">
+          {validationError}
+        </div>
+      )}
     </div>
   );
 }
