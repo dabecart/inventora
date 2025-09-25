@@ -23,12 +23,20 @@ export default function InventoraClient() {
   const [mergeLog, setMergeLog] = useState([]);
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
+  // Create/edit items/storage units.
   const [creatingItem, setCreatingItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [creatingStorage, setCreatingStorage] = useState(null);
   const [editingStorage, setEditingStorage] = useState(null);
 
+  // Search panel
+  const [showFindItems, setShowFindItems] = useState(false);
+  const [itemQuery, setItemQuery] = useState('');
+  const [filterStorage, setFilterStorage] = useState('');
+
   const {
+    itemMetaKeys,
+    storageMetaKeys,
     signedIn,
     userId,
     inventory,
@@ -168,6 +176,20 @@ export default function InventoraClient() {
     return errors;
   }
 
+  // ---------------- Search ----------------
+  const filteredItems = (inventory.items || []).filter(it => {
+    if (itemQuery && !it.name.toLowerCase().includes(itemQuery.toLowerCase())) return false;
+    if (filterStorage && it.storageUnitId !== filterStorage) return false;
+    return true;
+  });
+
+  function toggleFilterItems() {
+    if(showFindItems) {
+      setItemQuery('');
+    }
+    setShowFindItems(s => !s);
+  }
+
   // ---------------- Render UI ----------------
   return (
     <div className="p-6 max-w-5xl w-full mx-auto">
@@ -222,10 +244,23 @@ export default function InventoraClient() {
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold">Items</h2>
           <div className="flex gap-2">
-            <IconButton title="Find items" onClick={() => setShowFindItems(s => !s)} className="bg-gray-700 text-white"><Search /></IconButton>
+            <IconButton title="Find items" onClick={toggleFilterItems} className="bg-gray-700 text-white"><Search /></IconButton>
             <IconButton title="Create item" onClick={() => setCreatingItem(true)} className="bg-blue-600 text-white"><Plus /></IconButton>
           </div>
         </div>
+
+        {showFindItems && (
+          <div className="mb-3 p-3 bg-gray-800 rounded">
+            <div className="flex gap-2">
+              <input value={itemQuery} onChange={e => setItemQuery(e.target.value)} placeholder="Search by name..." className="flex-1 px-3 py-2 rounded bg-gray-700 text-white" />
+              <select value={filterStorage} onChange={e => setFilterStorage(e.target.value)} className="px-3 py-2 rounded bg-gray-700 text-white">
+                <option value="">All storages</option>
+                {(storageUnits.units || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
         <table className="text-left w-full mt-3 table-auto text-sm">
           <thead>
             <tr>
@@ -235,7 +270,7 @@ export default function InventoraClient() {
             </tr>
           </thead>
           <tbody>
-            {(inventory.items || []).map(it => {
+            {(filteredItems || []).map(it => {
               const storage = (storageUnits.units || []).find(u => u.id === it.storageUnitId);
               return (
                 <tr key={it.id} className="border-t">
@@ -280,6 +315,7 @@ export default function InventoraClient() {
         <EditItemModal
           title="Create item"
           storageUnits={storageUnits.units}
+          metaKeys={itemMetaKeys}
           onSave={(updated) => {
             // Apply everything in bulk.
             handleCreateItem(updated.name, updated.qty, updated.storageUnitId, updated.meta);
@@ -294,6 +330,7 @@ export default function InventoraClient() {
         <EditItemModal
           item={editingItem}
           storageUnits={storageUnits.units}
+          metaKeys={itemMetaKeys}
           onSave={(updated) => {
             // Apply everything in bulk.
             handleRenameItem(editingItem.id, updated.name);
@@ -317,6 +354,7 @@ export default function InventoraClient() {
       {creatingStorage && (
         <EditStorageModal
           title="Create Storage Unit"
+          metaKeys={storageMetaKeys}
           onSave={(updated) => {
             // Apply everything in bulk.
             handleCreateStorage(updated.name, updated.meta);
@@ -330,6 +368,7 @@ export default function InventoraClient() {
       {editingStorage && (
         <EditStorageModal
           unit={editingStorage}
+          metaKeys={storageMetaKeys}
           onSave={(updated) => {
             handleRenameStorage(editingStorage.id, updated.name);
             Object.entries(updated.meta).forEach(([k, v]) => {
@@ -384,7 +423,7 @@ function IconButton({ title, onClick, children, className = '', isDisabled = fal
   );
 }
 
-function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], onSave, onDiscard, validationFunction }) {
+function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], metaKeys = [], onSave, onDiscard, validationFunction }) {
   const [name, setName] = useState(item.name || '');
   const [qty, setQty] = useState(item.qty ?? 0);
   const [storageId, setStorageId] = useState(item.storageUnitId || '');
@@ -403,8 +442,6 @@ function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], onSa
       });
     }
   }
-
-  const metaKeys = ['tags','part number','serial number','link','manufacturer','datasheet link','photos'];
 
   const hasErrors = Object.keys(errors).length > 0;
 
@@ -450,7 +487,7 @@ function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], onSa
   );
 }
 
-function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard, validationFunction}) {
+function EditStorageModal({ title = 'Edit Storage', unit = {}, metaKeys = [], onSave, onDiscard, validationFunction}) {
   const [name, setName] = useState(unit.name || '');
   const [meta, setMeta] = useState({ ...(unit.meta || {}) });
 
@@ -463,7 +500,6 @@ function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard
     }
   }
 
-  const storageMetaKeys = ['location','capacity','description','photos'];
   const hasErrors = Object.keys(errors).length > 0;
 
   return (
@@ -484,7 +520,7 @@ function EditStorageModal({ title = 'Edit Storage', unit = {}, onSave, onDiscard
           <div>
             <label className="block text-sm text-gray-400 mb-1">Meta</label>
             <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded">
-              <MetaEditor meta={meta} allowedKeys={storageMetaKeys} onChange={m => setMeta(m)} validationErrors={errors.meta || {}} />
+              <MetaEditor meta={meta} allowedKeys={metaKeys} onChange={m => setMeta(m)} validationErrors={errors.meta || {}} />
             </div>
           </div>
         </div>

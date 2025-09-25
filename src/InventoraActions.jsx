@@ -1,4 +1,3 @@
-import { meta } from '@eslint/js';
 import {simpleId, nowIso} from './Utils'
 
 // ---------------- Action model & applying ----------------
@@ -20,10 +19,14 @@ import {simpleId, nowIso} from './Utils'
 //  - remove_storage_meta
 
 export default function InventoraActions(userId = '(anonymous)', inventory, setInventory, storageUnits, setStorageUnits, enqueueAction) {
+
+  const itemMetaKeys    = ['Description', 'Tags','Part Number','Serial Number','Link','Manufacturer','Datasheet Link','Photos'];
+  const storageMetaKeys = ['Location','Capacity','Description','Photos'];
+
   function validateItemsMeta(metaKey, metaValue) {
     switch(metaKey) {
-      case 'link':
-      case 'datasheet link': {
+      case 'Link':
+      case 'Datasheet Link': {
         if (!metaValue) {
           return "Link cannot be empty.";
         }
@@ -35,20 +38,21 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
         }
       }
 
-      case 'photos': {
-        // TODO: Validate photos.
+      case 'Photos': {
+        // TODO: Validate Photos.
         return null;
       }
 
-      case 'tags': {
+      case 'Tags': {
         // TODO: Validate the commas
         if(!metaValue) return 'Cannot be empty.'
         return null;
       }
 
-      case 'manufacturer':
-      case 'part number':
-      case 'serial number': {
+      case 'Description':
+      case 'Manufacturer':
+      case 'Part Number':
+      case 'Serial Number': {
         if(!metaValue) return 'Cannot be empty.'
         return null;
       }
@@ -58,14 +62,14 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
 
   function validateStoragesMeta(metaKey, metaValue) {
     switch(metaKey) {
-      case 'photos': {
-        // TODO: Validate photos.
+      case 'Photos': {
+        // TODO: Validate Photos.
         return null;
       }
 
-      case 'location':
-      case 'capacity':
-      case 'description': {
+      case 'Location':
+      case 'Capacity':
+      case 'Description': {
         if(!metaValue) return 'Cannot be empty.'
         return null;
       }
@@ -516,6 +520,8 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
   }
 
   return {
+    itemMetaKeys,
+    storageMetaKeys,
     applyActionsToState,
     handleCreateItem, 
     handleDeleteItem, 

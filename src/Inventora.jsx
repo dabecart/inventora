@@ -37,6 +37,8 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
   } = DriveManager(setStatus);
 
   const {
+    itemMetaKeys,
+    storageMetaKeys,
     applyActionsToState,
     handleCreateItem, 
     handleDeleteItem, 
@@ -305,6 +307,8 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
   }
 
   return {
+    itemMetaKeys,
+    storageMetaKeys,
     signedIn,
     userId,
     inventory,
