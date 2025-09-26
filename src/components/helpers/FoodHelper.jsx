@@ -124,12 +124,12 @@ export default function FoodHelper({ storageUnits = [], onChangeView, setMenuNam
 
         {view === "barcode" && product && (
           <div>
-            <div className="p-4 border rounded grid grid-cols-3 gap-4">
+            <div className="p-4 border rounded grid sm:grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Product images</label>
                   <PhotoMetaEditor value={images} onChange={setImages} />
                 </div>
-                <div className="col-span-2 flex flex-col">
+                <div className="sm:col-span-2 flex flex-col">
                   <label className="block text-sm text-gray-400 mb-1">Name</label>
                   <input 
                     value={product.name || ''} 
@@ -169,7 +169,7 @@ export default function FoodHelper({ storageUnits = [], onChangeView, setMenuNam
             )} 
 
             <label className="block text-sm text-gray-400 mb-1 mt-8">Storage</label>
-            <select value={storageId || ''} onChange={e => setStorageId(e.target.value)} className="flex-1 px-3 py-2 rounded border border-gray-300">
+            <select value={storageId || ''} onChange={e => setStorageId(e.target.value)} className="flex-1 px-3 py-2 rounded border border-gray-300 bg-gray-800">
               <option value="">(no storage)</option>
               {storageUnits.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
