@@ -26,7 +26,7 @@ export default function EditItemModal({ title = 'Edit Item', item = {}, storageU
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-gray-900 text-gray-900 text-white rounded-lg w-full max-w-2xl p-6 m-2">
+      <div className="bg-gray-900 text-gray-900 text-white rounded-lg w-full max-w-3xl p-6 m-2">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-semibold">{title}</h3>
           <button onClick={onDiscard} className="p-2 rounded-md"><XIcon /></button>

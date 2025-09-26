@@ -2,11 +2,13 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import PhotoMetaEditor from "../components/PhotoMetaEditor";
+import FieldError from "../components/FieldError";
 
 export default function BarcodeScanner({ onDetected, formats = ["ean_13", "qr_code"] }) {
   const videoRef = useRef();
   const [fallbackMode, setFallbackMode] = useState(false);
   const [images, setImages] = useState([]);
+  const [notDetected, setNotDetected] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -70,10 +72,12 @@ export default function BarcodeScanner({ onDetected, formats = ["ean_13", "qr_co
           const result = await reader.decodeFromImageUrl(img.src);
           if (result) {
             onDetected(result.getText());
+            setNotDetected(false);
             break;
           }
         } catch (e) {
           console.warn("No barcode in image", e);
+          setNotDetected(true);
         }
       }
     })();
@@ -82,8 +86,11 @@ export default function BarcodeScanner({ onDetected, formats = ["ean_13", "qr_co
   if (fallbackMode) {
     return (
       <div>
-        <div className="text-sm text-gray-500 mb-2">{"Snap or upload a photo of the barcode."}</div>
-        <PhotoMetaEditor value={images} onChange={setImages} />
+        <div className="text-sm text-gray-500 mb-2">{"Snap or upload a photo of the code."}</div>
+        <PhotoMetaEditor value={images} onChange={setImages} disableGallery={true} />
+        {notDetected && (
+          <FieldError text="Code not detected."/>
+        )} 
       </div>
     );
   }

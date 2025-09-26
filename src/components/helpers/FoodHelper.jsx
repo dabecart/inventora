@@ -1,126 +1,209 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import BarcodeScanner from "../../utils/BarcodeScanner";
+import MenuViews from "../../utils/MenuViews";
+import { ShoppingCart } from "lucide-react";
+import PhotoMetaEditor, {resizeAndCompress} from "../PhotoMetaEditor";
+import { simpleId } from "../../Utils";
+import Spinner from "../Spinner";
+import FieldError from "../FieldError";
 
-export default function FoodHelper({ storageUnits = [], onBack, openEditModal }) {
-  const [barcode, setBarcode] = useState(null);
+export default function FoodHelper({ storageUnits = [], onChangeView, setMenuName }) {
+  const HELPER_ID = "food";
+  const HELPER_NAME = "Food Helper"
+  const HELPER_ICON = <ShoppingCart size={36} />;
+  
+  // "barcode" | "storage" | "quantity" | "resume"
+  const {view, goToView, goToPreviousView} = MenuViews("barcode");
+  const [isActive, setActive] = useState(false);
+  
+  const [isLoading, setLoading] = useState(false);
+
   const [product, setProduct] = useState(null);
-  const [storageId, setStorageId] = useState('');
-  const [scanningStorage, setScanningStorage] = useState(false);
-  const [stickerScanResult, setStickerScanResult] = useState(null);
+  const [productError, setProductError] = useState(null);
+  const [storageId, setStorageId] = useState(null);
+  const [storageIdError, setStorageIdError] = useState(null);
+  const [images, setImages] = useState([]);
 
-  async function onDetectedBarcode(code) {
-    setBarcode(code);
-    const p = await lookupFoodByBarcode(code);
-    setProduct(p);
+  const menuNames = {
+    "barcode" : "Scan the product barcode",
+    "storage" : "Scan or select the storage unit",
+    "quantity": "How many products are you adding?",
+    "resume"  : "Check the fields",
   }
 
+  useEffect(() => {
+    if(!isActive) return;
+    
+    setMenuName(menuNames[view]);
+
+  }, [isActive, view]);
+
+  async function onDetectedBarcode(code) {
+    setLoading(true);
+    const p = await lookupFoodByBarcode(code);
+    if(p.image) {
+      resizeAndCompress(p.image, (dataUrl) => {
+        setImages(it => [...it, { id: `p-${simpleId()}`, src: dataUrl }]);
+        // Wait until the images have been processed.
+        setProduct(p);
+        setLoading(false);
+      });
+    }else {
+      // No photo, let the user add them themselves.
+      setProduct(p);
+      setLoading(false);
+    }
+  }
+
+  function onDetectedStorage(code) {
+    const unit = storageUnits.find(s => s.id === code);
+    if(!unit) {
+      setStorageId(null);
+      setStorageIdError(`Code "${code}" is not a valid storage unit.`);
+    }else {
+      setStorageId(code);
+      setStorageIdError(null);
+    }
+  }
+
+  // https://openfoodfacts.github.io/openfoodfacts-server/api/ref-v2/#get-/api/v2/product/-barcode-
   async function lookupFoodByBarcode(code) {
     try {
-      const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(code)}.json`);
+      const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}`);
       const data = await res.json();
       if (data && data.status === 1) {
+        setProductError(null);
         return {
-          name: data.product.product_name || data.product.generic_name || data.product.brands || code,
-          image: data.product.image_front_small_url || data.product.image_url || null,
+          name: data.product.product_name_en || data.product.product_name || data.product.generic_name || data.product.brands || code,
+          barcode: code, 
+          image: data.product.image_url || null,
+          manufacturer: data.product.brands,
           raw: data
         };
       }
     } catch (e) {
-      console.warn('OpenFoodFacts lookup failed', e);
+      setProductError(`The product lookup failed. Please, try again.`);
     }
-    return { name: code, image: null, raw: null };
+
+    setProductError(`The code "${code}" is not valid or did not yield any results.`);
+    return { name: code, barcode: code, image: null, manufacturer: null, raw: null };
   }
 
-  function handleUseProduct() {
+  function handleUseBarcodeInfo() {
     const prefill = {
       name: product ? (product.name || barcode) : barcode || '',
       qty: 1,
       storageUnitId: storageId || null,
       meta: {}
     };
-    openEditModal(prefill);
+    // Update the product information!
+    goToView("storage");
   }
 
-  // Storage QR scan flow — create an ad-hoc scanner that accepts qr_code only
-  function openStorageScanner() {
-    setScanningStorage(true);
-    setStickerScanResult(null);
-
-    const modal = document.createElement('div');
-    modal.style.position = 'fixed';
-    modal.style.inset = '0';
-    modal.style.zIndex = '9999';
-    modal.style.background = 'rgba(0,0,0,0.6)';
-    modal.innerHTML = '<div id="scanner-root" style="max-width:420px;margin:6vh auto;background:white;padding:12px;border-radius:8px"></div>';
-    document.body.appendChild(modal);
-
-    // Render a temporary scanner into #scanner-root (assuming ReactDOM is available)
-    import("react-dom").then(ReactDOM => {
-      const root = modal.querySelector('#scanner-root');
-      function onFound(code) {
-        ReactDOM.unmountComponentAtNode(root);
-        document.body.removeChild(modal);
-        setScanningStorage(false);
-        setStorageId(code);
-      }
-      ReactDOM.render(<BarcodeScanner onDetected={onFound} formats={['qr_code']} hintText="Scan storage sticker QR" />, root);
-    });
+  function setProductField(key, value) {
+    const updatedVal = {[key] : value};
+    setProduct(p => ({...p, updatedVal}));
   }
 
-  return (
-    <div className="bg-gray-900 text-gray-900 text-white rounded-lg w-full max-w-3xl p-6 m-2 relative">
-      {!barcode ? (
-        <div className="grid grid-rows-1 sm:grid-cols-2 gap-4">
+  function getJSX() {
+    return (
+      <div className="bg-gray-900 text-gray-900 text-white rounded-lg w-full max-w-3xl relative">
+        {view === "barcode" && !product && (
           <div>
             <BarcodeScanner onDetected={onDetectedBarcode} formats={['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128']} />
-          </div>
 
-          <div className="p-4 border rounded">
-            <div className="text-sm text-gray-600 mb-3">Scan a barcode and we'll attempt to fetch the product name + image from OpenFoodFacts.</div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Storage</label>
-              <div className="flex gap-2">
-                <select value={storageId} onChange={e => setStorageId(e.target.value)} className="flex-1 px-3 py-2 rounded border border-gray-300">
-                  <option value="">(no storage)</option>
-                  {storageUnits.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-                <button onClick={openStorageScanner} className="px-3 py-2 rounded bg-gray-800 text-white">Scan sticker</button>
-              </div>
+            <div className="flex gap-2 mt-6">
+              {isLoading && (
+                <Spinner/>
+              )}
+
+              <button onClick={() => goToView("storage")} className="ml-auto px-4 py-2 rounded bg-gray-200 text-gray-700">Skip</button>
             </div>
-            <div className="mt-4 text-sm text-gray-500">After detection you can edit or save the item.</div>
           </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="p-4 border rounded flex items-center gap-4">
-            {product && product.image ? (
-              <img src={product.image} alt="product" className="w-32 h-32 object-cover rounded" />
-            ) : (
-              <div className="w-32 h-32 bg-gray-100 flex items-center justify-center rounded text-xs text-gray-500">No image</div>
+        )}
+
+        {view === "barcode" && product && (
+          <div>
+            <div className="p-4 border rounded grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Product images</label>
+                  <PhotoMetaEditor value={images} onChange={setImages} />
+                </div>
+                <div className="col-span-2 flex flex-col">
+                  <label className="block text-sm text-gray-400 mb-1">Name</label>
+                  <input 
+                    value={product.name || ''} 
+                    onChange={e => setProductField('name', e.target.value)} 
+                    className={`w-full px-3 py-2 rounded border border-gray-300 bg-gray-800`} />
+
+                  <label className="block text-sm text-gray-400 mb-1 mt-2">Manufacturer</label>
+                  <input 
+                    value={product.manufacturer || ''} 
+                    onChange={e => setProductField('manufacturer', e.target.value)} 
+                    className={`w-full px-3 py-2 rounded border border-gray-300 bg-gray-800`} />
+
+
+                  <div className="text-xs text-gray-500 mt-2">Barcode: {product.barcode}</div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-6">
+                {productError !== null && (
+                  <FieldError text={productError}/>
+                )}
+
+                <button onClick={() => { setProduct(null); setImages([]); }} className="ml-auto px-3 py-2 rounded bg-gray-200 text-gray-700">Scan again</button>
+                <button onClick={handleUseBarcodeInfo} className="px-3 py-2 rounded bg-blue-600 text-white">Next</button>
+              </div>
+          </div>
+        )}
+
+        {view === "storage" && (
+          <div className="flex flex-col flex-gap-1">
+            {storageId === null && (
+              <BarcodeScanner onDetected={onDetectedStorage} formats={['qr_code']} hintText="Scan storage sticker QR" />
             )}
-            <div>
-              <div className="text-lg font-semibold">{product ? product.name : barcode}</div>
-              <div className="text-xs text-gray-500 mt-2">Barcode: {barcode}</div>
-              <div className="mt-3 flex gap-2">
-                <button onClick={() => { setBarcode(null); setProduct(null); }} className="px-3 py-2 rounded bg-gray-200">Scan again</button>
-                <button onClick={handleUseProduct} className="px-3 py-2 rounded bg-blue-600 text-white">Next: Edit/Create</button>
-              </div>
-            </div>
-          </div>
 
-          <div className="p-4 border rounded">
-            <label className="block text-sm text-gray-400 mb-1">Storage</label>
-            <div className="flex gap-2">
-              <select value={storageId} onChange={e => setStorageId(e.target.value)} className="flex-1 px-3 py-2 rounded border border-gray-300">
-                <option value="">(no storage)</option>
-                {storageUnits.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-              <button onClick={openStorageScanner} className="px-3 py-2 rounded bg-gray-800 text-white">Scan sticker</button>
+            {storageIdError !== null && (
+              <FieldError text={storageIdError}/>
+            )} 
+
+            <label className="block text-sm text-gray-400 mb-1 mt-8">Storage</label>
+            <select value={storageId || ''} onChange={e => setStorageId(e.target.value)} className="flex-1 px-3 py-2 rounded border border-gray-300">
+              <option value="">(no storage)</option>
+              {storageUnits.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            
+            <div className="flex justify-end gap-2 mt-4">
+              {storageId !== null && (
+                <button onClick={() => { setStorageId(null); setStorageIdError(null); }} className="ml-auto px-3 py-2 rounded bg-gray-200 text-gray-700">Scan again</button>
+              )}
+              <button onClick={() => goToView("quantity")} className="px-3 py-2 rounded bg-blue-600 text-white">Continue</button>
             </div>
-            <div className="mt-4 text-sm text-gray-500">If the product wasn't found online we will prefill the barcode as the name. You can edit any field on the next screen.</div>
           </div>
-        </div>
-      )}
-    </div>
-  );
+        )}
+
+        {view === "quantity" && (
+          <div className="flex flex-col flex-gap-1">
+            
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => goToView("resume")} className="px-3 py-2 rounded bg-blue-600 text-white">Continue</button>
+            </div>
+          </div>
+        )}
+
+        {view === "resume" && (
+          <div className="flex flex-col flex-gap-1">
+            
+            <div className="flex justify-end gap-2 mt-6">
+              <button className="px-4 py-2 rounded bg-gray-200 text-gray-700">Add item</button>
+            </div>
+          </div>
+        )}
+
+      </div>
+    );
+  }
+
+  return [HELPER_ID, HELPER_NAME, HELPER_ICON, getJSX, setActive, goToPreviousView];
 }

@@ -1,13 +1,12 @@
 // components/ElectronicsHelper.jsx
 import { useState } from "react";
 import BarcodeScanner from "../../utils/BarcodeScanner";
-import { ChevronLeft } from "lucide-react";
 
 /*
   You should replace lookupElectronicsByBarcode with your preferred API (UPCItemDB, BarcodeLookup, etc.)
   Many of these services require an API key. If none is configured we fallback to barcode string as name.
 */
-export default function ElectronicsHelper({ storageUnits = [], onBack, openEditModal, UPC_ITEM_DB_API_KEY = null }) {
+export default function ElectronicsHelper({ storageUnits = [], openEditModal, UPC_ITEM_DB_API_KEY = null }) {
   const [barcode, setBarcode] = useState(null);
   const [product, setProduct] = useState(null);
   const [storageId, setStorageId] = useState('');

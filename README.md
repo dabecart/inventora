@@ -1,5 +1,9 @@
 # Inventora
 
+*Work in progress by @dabecart, 2025.*
+
+Access [Inventora](https://dabecart.github.io/inventora/) on its deployment site.
+
 ## Setup
 
 Requisites:
@@ -37,3 +41,6 @@ Connect the port 5173 of WSL2 to the port 5173 of Windows (run terminal as admin
 ```
 netsh interface portproxy set v4tov4 listenport=5173 listenaddress=0.0.0.0 connectport=5173 connectaddress=172.27.41.80
 ```
+
+# License
+This project is licensed under MIT License. Read the [LICENSE file](LICENSE).

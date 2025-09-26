@@ -1,5 +1,23 @@
 import MetaEditor from "../MetaEditor";
 import FieldError from "../FieldError";
+import { Plus, Minus } from "lucide-react";
+import IconButton from "../IconButton";
+
+    // setHelper(
+    //   <ManualHelper
+    //     storageUnits={storageUnits} 
+    //     metaKeys={metaKeys} 
+    //     name={name} 
+    //     setName={setName} 
+    //     qty={qty} 
+    //     setQty={setQty} 
+    //     storageId={storageId} 
+    //     setStorageId={setStorageId} 
+    //     meta={meta} 
+    //     setMeta={setMeta} 
+    //     errors={errors}
+    //   />
+    // );
 
 export default function ManualHelper({ storageUnits, metaKeys, name, setName, qty, setQty, storageId, setStorageId, meta, setMeta, errors }) {
   return (
@@ -10,7 +28,11 @@ export default function ManualHelper({ storageUnits, metaKeys, name, setName, qt
         <FieldError text={errors.name} />
 
         <label className="block text-sm text-gray-400 mt-4 mb-1">Quantity</label>
-        <input type="number" min="0" value={qty} onChange={e => setQty(e.target.value)} className={`w-full px-3 py-2 rounded border ${errors.qty ? 'border-red-500' : 'border-gray-300'} bg-gray-800`} />
+        <div className="w-full flex flex-row gap-2">
+          <input type="number" min="0" value={qty} onChange={e => setQty(e.target.value)} className={`w-full px-3 py-2 rounded border ${errors.qty ? 'border-red-500' : 'border-gray-300'} bg-gray-800`} />
+          <IconButton title="Increment quantity" onClick={() => setQty(q => q+1)}               className='self-center bg-green-600 text-white text-xs'><Plus /></IconButton>
+          <IconButton title="Decrement quantity" onClick={() => setQty(q => Math.max(q-1, 0))}  className='self-center bg-orange-500 text-white text-xs'><Minus /></IconButton>
+        </div>
         <FieldError text={errors.qty} />
 
         <label className="block text-sm text-gray-400 mt-4 mb-1">Storage</label>

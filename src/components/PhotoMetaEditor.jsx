@@ -6,7 +6,59 @@ import {
     X as XIcon,
 } from "lucide-react";
 
-export default function PhotoMetaEditor({ value = [], onChange, className = '', maxSizeKB = 1024 }) {
+// --- Image helpers ---
+export function resizeAndCompress(input, callback, maxSizeKB = 1024) {
+  const processImage = (src) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous"; // allow CORS if loading from external URLs
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      // Target dimensions: keep aspect ratio, max ~1200px wide.
+      const maxDim = 1200;
+      let { width, height } = img;
+      if (width > height && width > maxDim) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else if (height > maxDim) {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Compress quality adaptively.
+      let quality = 0.9;
+      let dataUrl;
+      do {
+        dataUrl = canvas.toDataURL("image/jpeg", quality);
+        const sizeKB = Math.round((dataUrl.length * 3) / 4 / 1024);
+        if (sizeKB <= maxSizeKB) break;
+        quality -= 0.1;
+      } while (quality > 0.3);
+
+      callback(dataUrl);
+    };
+    img.src = src;
+  };
+
+  // Files
+  if (input instanceof File && input.type.startsWith("image/")) {
+    const reader = new FileReader();
+    reader.onload = e => processImage(e.target.result);
+    reader.readAsDataURL(input);
+  } 
+  // URL string
+  else if (typeof input === "string") {
+    processImage(input);
+  } else {
+    throw new Error("Unsupported input type: must be a File or URL string");
+  }
+}
+
+export default function PhotoMetaEditor({ value = [], onChange, className = '', maxSizeKB = 1024, disableGallery = false }) {
   const [items, setItems] = useState(Array.isArray(value) ? value.slice() : []);
   // For full-screen preview
   const [preview, setPreview] = useState(null); 
@@ -29,57 +81,11 @@ export default function PhotoMetaEditor({ value = [], onChange, className = '', 
 
   useEffect(() => onChange && onChange(items), [items]);
 
-  // --- Image helpers ---
-  function resizeAndCompress(file, callback) {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-
-        // Target dimensions: keep aspect ratio, max ~1200px wide.
-        const maxDim = 1200;
-        let { width, height } = img;
-        if (width > height && width > maxDim) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else if (height > maxDim) {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Compress quality adaptively.
-        let quality = 0.9;
-        let dataUrl;
-        do {
-          dataUrl = canvas.toDataURL("image/jpeg", quality);
-          const sizeKB = Math.round((dataUrl.length * 3) / 4 / 1024);
-          if (sizeKB / 1024 <= maxSizeKB) break;
-          quality -= 0.1;
-        } while (quality > 0.3);
-
-        callback(dataUrl);
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function addFromFile(file) {
-    resizeAndCompress(file, result => {
-      setItems(it => [...it, { id: `p-${simpleId()}`, src: result }]);
-    });
-  }
-
-  function handleFiles(files) {
-    for (const file of files) {
-      if (file.type.startsWith("image/")) {
-        addFromFile(file);
-      }
+  function handleInputs(inputs) {
+    for (const input of inputs) {
+      resizeAndCompress(input, result => {
+        setItems(it => [...it, { id: `p-${simpleId()}`, src: result }]);
+      }, maxSizeKB);
     }
   }
 
@@ -115,7 +121,7 @@ export default function PhotoMetaEditor({ value = [], onChange, className = '', 
       setIsHighlighted(false);
       dragCounter.current = 0;
       const dt = e.dataTransfer;
-      if (dt && dt.files && dt.files.length) handleFiles(dt.files);
+      if (dt && dt.files && dt.files.length) handleInputs(dt.files);
     }
     function onDragOver(e) {
       preventDefaults(e);
@@ -148,7 +154,7 @@ export default function PhotoMetaEditor({ value = [], onChange, className = '', 
               type="file"
               multiple
               onChange={e => {
-                if (e.target.files) handleFiles(e.target.files);
+                if (e.target.files) handleInputs(e.target.files);
                 e.target.value = null;
               }}
               className="hidden"
@@ -161,7 +167,7 @@ export default function PhotoMetaEditor({ value = [], onChange, className = '', 
               type="file"
               multiple
               onChange={e => {
-                if (e.target.files) handleFiles(e.target.files);
+                if (e.target.files) handleInputs(e.target.files);
                 e.target.value = null;
               }}
               className="hidden"
@@ -176,7 +182,7 @@ export default function PhotoMetaEditor({ value = [], onChange, className = '', 
 
       {/* Thumbnails */}
       {
-        items.length > 0 && (
+        !disableGallery && items.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {items.map(it => (
             <div
@@ -201,7 +207,7 @@ export default function PhotoMetaEditor({ value = [], onChange, className = '', 
       }
 
       {/* Fullscreen Preview */}
-      {preview && (
+      {!disableGallery && preview && (
         <div
           className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50"
           onClick={() => setPreview(null)}
