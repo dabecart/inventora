@@ -299,7 +299,7 @@ export default function InventoraClient() {
       </div>
 
       <div className="mt-6 p-2 sm:p-4 border rounded">
-        <div className="flex justify-between items-center mb-3 p-2 sm:p-0">
+        <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold">Storage Units</h2>
           <div className="flex gap-2">
             <IconButton title="Create storage unit" onClick={() => setCreatingStorage(true)} className="bg-blue-600 text-white"><Plus /></IconButton>
