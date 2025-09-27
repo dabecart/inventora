@@ -52,7 +52,7 @@ export default function MenuHeader({ signedIn, userId, status, manualPush, local
         )}
 
         {/* User menu */}
-        <div className="relative">
+        <div className="relative" ref={menuRef}>
           <IconButton
             title={signedIn ? "User menu" : "Log in"}
             onClick={() => setMenuOpen((o) => !o)}
@@ -79,7 +79,7 @@ export default function MenuHeader({ signedIn, userId, status, manualPush, local
                       }}
                       className="mt-3 w-full rounded-lg bg-red-600 text-white px-3 py-2 text-sm hover:bg-red-700"
                     >
-                      <div className="flex items-center justify-center gap-2">
+                      <div className="flex items-center justify-center gap-2 text-nowrap">
                         <LogOut size={16} />
                         Log out
                       </div>
@@ -93,7 +93,7 @@ export default function MenuHeader({ signedIn, userId, status, manualPush, local
                     }}
                     className="w-full rounded-lg bg-blue-600 text-white px-3 py-2 text-sm hover:bg-blue-700"
                   >
-                    <div className="flex items-center justify-center gap-2">
+                    <div className="flex items-center justify-center gap-2 text-nowrap">
                       <LogIn size={16} />
                       Log in
                     </div>

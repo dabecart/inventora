@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { XIcon, ChevronLeft} from "lucide-react";
 
 import FoodHelper from "./helpers/FoodHelper";
+import CustomHelper from "./helpers/CustomHelper";
 
 export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, validationFunction}) {
   const buttonClass = "flex flex-col items-center justify-center gap-2 p-4 rounded-2xl shadow-md w-full h-full bg-gray-800 border hover:shadow-lg";
@@ -16,7 +17,7 @@ export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, v
 
   let helpers = {};
   // Add here all the new helpers.
-  [FoodHelper, ].forEach((helper) => {
+  [FoodHelper, CustomHelper].forEach((helper) => {
     const [id, name, icon, getJSX, setActive, prevViewFunc] = helper({
       storageUnits: storageUnits,
       metaKeys    : metaKeys,

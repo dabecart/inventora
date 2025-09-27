@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ShoppingCart } from "lucide-react";
+
 import BarcodeScanner from "../../utils/BarcodeScanner";
 import MenuViews from "../../utils/MenuViews";
-import { ShoppingCart } from "lucide-react";
 import PhotoMetaEditor, {resizeAndCompress} from "../PhotoMetaEditor";
 import { simpleId } from "../../Utils";
 import Spinner from "../Spinner";
@@ -85,6 +87,7 @@ export default function FoodHelper({ storageUnits = [], metaKeys = [], validatio
           barcode: code, 
           image: data.product.image_url || null,
           manufacturer: data.product.brands,
+          link: `https://world.openfoodfacts.org/product/${code}`,
           raw: data
         };
       }
@@ -93,14 +96,16 @@ export default function FoodHelper({ storageUnits = [], metaKeys = [], validatio
     }
 
     setProductError(`The code "${code}" is not valid or did not yield any results.`);
-    return { name: code, barcode: code, image: null, manufacturer: null, raw: null };
+    return { name: code, barcode: code, image: null, manufacturer: null, link: null, raw: null };
   }
 
   function handleUseBarcodeInfo() {
     if(product !== null) {
       setName(product.name);
       setMetaValue("Manufacturer", product.manufacturer);
+      setMetaValue("Link", product.link);
       setMetaValue("Photos", images);
+      setMetaValue("Tags", "food");
     }
 
     // Update the product information!
