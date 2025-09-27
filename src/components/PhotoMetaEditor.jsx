@@ -58,7 +58,7 @@ export function resizeAndCompress(input, callback, maxSizeKB = 1024) {
   }
 }
 
-export default function PhotoMetaEditor({ value = [], onChange, className = '', maxSizeKB = 1024, disableGallery = false }) {
+export default function PhotoMetaEditor({ value = [], onChange, className = '', maxSizeKB = 1024, disableGallery = false, allowMultipleUploads = true }) {
   const [items, setItems] = useState(Array.isArray(value) ? value.slice() : []);
   // For full-screen preview
   const [preview, setPreview] = useState(null); 
@@ -152,7 +152,7 @@ export default function PhotoMetaEditor({ value = [], onChange, className = '', 
               accept="image/*"
               capture="environment"
               type="file"
-              multiple
+              multiple={allowMultipleUploads}
               onChange={e => {
                 if (e.target.files) handleInputs(e.target.files);
                 e.target.value = null;
@@ -165,7 +165,7 @@ export default function PhotoMetaEditor({ value = [], onChange, className = '', 
             <input
               accept="image/*"
               type="file"
-              multiple
+              multiple={allowMultipleUploads}
               onChange={e => {
                 if (e.target.files) handleInputs(e.target.files);
                 e.target.value = null;
@@ -183,7 +183,7 @@ export default function PhotoMetaEditor({ value = [], onChange, className = '', 
       {/* Thumbnails */}
       {
         !disableGallery && items.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {items.map(it => (
             <div
               key={it.id}

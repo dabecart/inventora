@@ -1,25 +1,9 @@
-import MetaEditor from "../MetaEditor";
-import FieldError from "../FieldError";
+import MetaEditor from "./MetaEditor";
+import FieldError from "./FieldError";
 import { Plus, Minus } from "lucide-react";
-import IconButton from "../IconButton";
+import IconButton from "./IconButton";
 
-    // setHelper(
-    //   <ManualHelper
-    //     storageUnits={storageUnits} 
-    //     metaKeys={metaKeys} 
-    //     name={name} 
-    //     setName={setName} 
-    //     qty={qty} 
-    //     setQty={setQty} 
-    //     storageId={storageId} 
-    //     setStorageId={setStorageId} 
-    //     meta={meta} 
-    //     setMeta={setMeta} 
-    //     errors={errors}
-    //   />
-    // );
-
-export default function ManualHelper({ storageUnits, metaKeys, name, setName, qty, setQty, storageId, setStorageId, meta, setMeta, errors }) {
+export default function ItemResume({ storageUnits, metaKeys, name, setName, qty, setQty, storageId, setStorageId, meta, setMeta, errors }) {
   return (
     <div className="flex flex-col sm:flex-row gap-4">
       <div className="w-full">

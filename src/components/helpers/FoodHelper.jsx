@@ -6,13 +6,22 @@ import PhotoMetaEditor, {resizeAndCompress} from "../PhotoMetaEditor";
 import { simpleId } from "../../Utils";
 import Spinner from "../Spinner";
 import FieldError from "../FieldError";
+import ItemResume from "../ItemResume";
+import { setKeyValue } from "../MetaEditor";
 
-export default function FoodHelper({ storageUnits = [], onChangeView, setMenuName }) {
+export default function FoodHelper({ storageUnits = [], metaKeys = [], validationFunction, setMenuName, handleSaveNewItem }) {
   const HELPER_ID = "food";
   const HELPER_NAME = "Food Helper"
   const HELPER_ICON = <ShoppingCart size={36} />;
   
-  // "barcode" | "storage" | "quantity" | "resume"
+  const [name, setName] = useState('');
+  const [storageId, setStorageId] = useState(null);
+  const [qty, setQty] = useState(1);
+  const [meta, setMeta] = useState({});
+  const errors = validationFunction(name, Number(qty), storageId, meta) || {};
+  const hasErrors = Object.keys(errors).length > 0;
+
+  // "barcode" | "storage" | "resume"
   const {view, goToView, goToPreviousView} = MenuViews("barcode");
   const [isActive, setActive] = useState(false);
   
@@ -20,14 +29,12 @@ export default function FoodHelper({ storageUnits = [], onChangeView, setMenuNam
 
   const [product, setProduct] = useState(null);
   const [productError, setProductError] = useState(null);
-  const [storageId, setStorageId] = useState(null);
   const [storageIdError, setStorageIdError] = useState(null);
   const [images, setImages] = useState([]);
 
   const menuNames = {
     "barcode" : "Scan the product barcode",
     "storage" : "Scan or select the storage unit",
-    "quantity": "How many products are you adding?",
     "resume"  : "Check the fields",
   }
 
@@ -90,20 +97,19 @@ export default function FoodHelper({ storageUnits = [], onChangeView, setMenuNam
   }
 
   function handleUseBarcodeInfo() {
-    const prefill = {
-      name: product ? (product.name || barcode) : barcode || '',
-      qty: 1,
-      storageUnitId: storageId || null,
-      meta: {}
-    };
+    if(product !== null) {
+      setName(product.name);
+      setMetaValue("Manufacturer", product.manufacturer);
+      setMetaValue("Photos", images);
+    }
+
     // Update the product information!
     goToView("storage");
   }
 
-  function setProductField(key, value) {
-    const updatedVal = {[key] : value};
-    setProduct(p => ({...p, updatedVal}));
-  }
+  function setMetaValue(key, value) { setKeyValue(key, value, setMeta); }
+
+  function setProductField(key, value) { setKeyValue(key, value, setProduct); }
 
   function getJSX() {
     return (
@@ -178,15 +184,6 @@ export default function FoodHelper({ storageUnits = [], onChangeView, setMenuNam
               {storageId !== null && (
                 <button onClick={() => { setStorageId(null); setStorageIdError(null); }} className="ml-auto px-3 py-2 rounded bg-gray-200 text-gray-700">Scan again</button>
               )}
-              <button onClick={() => goToView("quantity")} className="px-3 py-2 rounded bg-blue-600 text-white">Continue</button>
-            </div>
-          </div>
-        )}
-
-        {view === "quantity" && (
-          <div className="flex flex-col flex-gap-1">
-            
-            <div className="flex justify-end gap-2 mt-6">
               <button onClick={() => goToView("resume")} className="px-3 py-2 rounded bg-blue-600 text-white">Continue</button>
             </div>
           </div>
@@ -194,9 +191,26 @@ export default function FoodHelper({ storageUnits = [], onChangeView, setMenuNam
 
         {view === "resume" && (
           <div className="flex flex-col flex-gap-1">
-            
+            <ItemResume
+              storageUnits={storageUnits} 
+              metaKeys={metaKeys} 
+              name={name} 
+              setName={setName} 
+              qty={qty} 
+              setQty={setQty} 
+              storageId={storageId} 
+              setStorageId={setStorageId} 
+              meta={meta} 
+              setMeta={setMeta} 
+              errors={errors}
+            />
             <div className="flex justify-end gap-2 mt-6">
-              <button className="px-4 py-2 rounded bg-gray-200 text-gray-700">Add item</button>
+              <button 
+                onClick={() => handleSaveNewItem({name, storageId, qty, meta})} 
+                disabled={hasErrors}
+                className={`px-4 py-2 rounded ${hasErrors ? 'bg-gray-400 text-gray-700' : 'bg-blue-600 text-white'}`}>
+                  Add item
+              </button>
             </div>
           </div>
         )}

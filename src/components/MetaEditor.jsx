@@ -4,26 +4,26 @@ import PhotoMetaEditor from "./PhotoMetaEditor";
 import IconButton from "./IconButton";
 import FieldError from "./FieldError";
 
+export function setKeyValue(key, value, setter) {
+  setter(m => ({ ...m, [key]: value }));
+}
+export function removeKey(key, setter) {
+  setter(m => {
+    const n = { ...m };
+    delete n[key];
+    return n;
+  });
+}
+export function addKey(key, setter) {
+  if (!key) return;
+  setter(m => ({ ...m, [key]: '' }));
+}
+
 export default function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], onChange, validationErrors = {} }) {
   const [meta, setMeta] = useState({ ...initialMeta });
   const available = allowedKeys.filter(k => !(k in meta));
 
   useEffect(() => onChange && onChange(meta), [meta]);
-
-  function setKeyValue(key, value) {
-    setMeta(m => ({ ...m, [key]: value }));
-  }
-  function removeKey(key) {
-    setMeta(m => {
-      const n = { ...m };
-      delete n[key];
-      return n;
-    });
-  }
-  function addKey(key) {
-    if (!key) return;
-    setMeta(m => ({ ...m, [key]: '' }));
-  }
 
   return (
     <div className="space-y-2 overflow-y-auto max-h-64">
@@ -35,19 +35,19 @@ export default function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], o
               <div className="grid grid-cols-6 gap-3 items-stretch">
                 <PhotoMetaEditor
                   value={v}
-                  onChange={val => setKeyValue(k, val)}
+                  onChange={val => setKeyValue(k, val, setMeta)}
                   className="col-span-5"
                 />
-                <IconButton title={`Delete meta "${k}"`}  onClick={() => removeKey(k)} className='bg-red-600 text-white'><Trash2 /></IconButton>
+                <IconButton title={`Delete meta "${k}"`}  onClick={() => removeKey(k, setMeta)} className='bg-red-600 text-white'><Trash2 /></IconButton>
               </div>
             ) : (
               <div className="grid grid-cols-6 gap-3">
                 <input 
                   value={v} 
-                  onChange={e => setKeyValue(k, e.target.value)} 
+                  onChange={e => setKeyValue(k, e.target.value, setMeta)} 
                   className={`col-span-5 w-full px-3 py-2 rounded border text-sm ${validationErrors[k] ? 'border-red-500' : 'border-gray-300'} bg-gray-800`} 
                 />
-                <IconButton title={`Delete meta "${k}"`}  onClick={() => removeKey(k)} className='bg-red-600 text-white'><Trash2 /></IconButton>
+                <IconButton title={`Delete meta "${k}"`}  onClick={() => removeKey(k, setMeta)} className='bg-red-600 text-white'><Trash2 /></IconButton>
               </div>
             )}
 
@@ -61,7 +61,7 @@ export default function MetaEditor({ meta: initialMeta = {}, allowedKeys = [], o
         <select
           defaultValue=""
           className="px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded"
-          onChange={e => addKey(e.target.value)}
+          onChange={e => addKey(e.target.value, setMeta)}
         >
           <option value="">Add meta...</option>
           {available.map(k => (

@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { XIcon, ChevronLeft} from "lucide-react";
-import MenuViews from "../utils/MenuViews";
 
 import FoodHelper from "./helpers/FoodHelper";
 
-export default function HelpersMenu({ onSave, onClose, storageUnits, metaKeys, validationFunction, handleCreateItem}) {
+export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, validationFunction}) {
   const buttonClass = "flex flex-col items-center justify-center gap-2 p-4 rounded-2xl shadow-md w-full h-full bg-gray-800 border hover:shadow-lg";
 
   // Stores the selected helper and its information.
@@ -15,21 +14,15 @@ export default function HelpersMenu({ onSave, onClose, storageUnits, metaKeys, v
   const [menuName, setMenuName] = useState('Create new item');
   useEffect(() => { helperID === null && setMenuName('Create new item') }, [helperID]);
 
-  // Properties of the new item.
-  const [name, setName] = useState('');
-  const [qty, setQty] = useState(0);
-  const [storageId, setStorageId] = useState('');
-  const [meta, setMeta] = useState({ ...({}) });
-
-  const errors = validationFunction(name, Number(qty), storageId, meta) || {};
-  const hasErrors = Object.keys(errors).length > 0;
-
   let helpers = {};
   // Add here all the new helpers.
   [FoodHelper, ].forEach((helper) => {
     const [id, name, icon, getJSX, setActive, prevViewFunc] = helper({
       storageUnits: storageUnits,
-      setMenuName : setMenuName
+      metaKeys    : metaKeys,
+      validationFunction : validationFunction,
+      setMenuName : setMenuName,
+      handleSaveNewItem : handleSave
     });
     helpers[id] = {name, icon, getJSX, setActive, prevViewFunc};
   })
@@ -55,7 +48,7 @@ export default function HelpersMenu({ onSave, onClose, storageUnits, metaKeys, v
     setHelperId(newHelperID);
   }
 
-  function handleSave() {
+  function handleSave({name, storageId, qty, meta}) {
     const formErr = validationFunction(name, Number(qty), storageId, meta) || {};
     if(Object.keys(formErr).length === 0){
       onSave({ 

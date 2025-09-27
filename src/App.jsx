@@ -3,9 +3,6 @@ import { useState } from "react";
 import {  
     Pencil,
     Trash2,
-    LogIn,
-    LogOut,
-    UploadCloud,
     Search,
     Plus,
     Minus,
@@ -14,6 +11,7 @@ import {
 import Inventora from './Inventora'
 import IconButton from "./components/IconButton";
 
+import MenuHeader from "./components/MenuHeader";
 import HelpersMenu from "./components/HelpersMenu";
 import EditItemModal from "./components/EditItemModal";
 import EditStorageModal from "./components/EditStorageModal";
@@ -195,30 +193,8 @@ export default function InventoraClient() {
   // ---------------- Render UI ----------------
   return (
     <div className="p-6 max-w-5xl w-full mx-auto">
-      <header className="flex items-center justify-between my-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold" title="Manage your inventory cleanly">Inventora</h1>
-        </div>
 
-        <div className="flex items-center gap-2">
-          {(localPendingActions.current || []).length === 0 ?
-            <IconButton title="Nothing to push" className='bg-gray-600 text-white' disabled={true}><UploadCloud /></IconButton>
-            :
-            <IconButton title="Push pending" onClick={manualPush} className='bg-green-600 text-white'><UploadCloud /></IconButton>
-          }
-
-          {signedIn ? 
-            <IconButton title="Log out" onClick={handleAuthButton} className="bg-red-600 text-white"><LogOut /></IconButton>
-            :
-            <IconButton title="Log in" onClick={handleAuthButton} className="bg-blue-600 text-white"><LogIn /></IconButton>
-          }
-        </div>
-      </header>
-
-      <div className="ml-4 text-sm text-white flex flex-col grow items-end">
-        <p>User: {userId || '(anonymous)'}</p>      
-        <span>Status: {status}</span>
-      </div>
+      <MenuHeader signedIn={signedIn} userId={userId} status={status} manualPush={manualPush} localPendingActions={localPendingActions} handleAuthButton={handleAuthButton}/>
 
       {updateAvailable && (
         <div className="mt-4 p-4 bg-yellow-200 border border-yellow-600 rounded">
@@ -242,9 +218,9 @@ export default function InventoraClient() {
         </div>
       )}
 
-      <div className="mt-6 p-4 border rounded">
+      <div className="mt-6 p-2 sm:p-4 border rounded">
         <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-semibold">Items</h2>
+          <h2 className="text-lg font-semibold p-2 sm:p-0">Items</h2>
           <div className="flex gap-2">
             <IconButton title="Find items" onClick={toggleFilterItems} className="bg-gray-700 text-white"><Search /></IconButton>
             <IconButton title="Create item" onClick={() => setShowCreateMenu(true)} className="bg-blue-600 text-white"><Plus /></IconButton>
@@ -252,7 +228,7 @@ export default function InventoraClient() {
         </div>
 
         {showFindItems && (
-          <div className="mb-3 p-3 bg-gray-800 rounded">
+          <div className="mb-3 sm:p-3 rounded">
             <div className="flex gap-2">
               <input value={itemQuery} onChange={e => setItemQuery(e.target.value)} placeholder="Search by name..." className="flex-1 px-3 py-2 rounded bg-gray-700 text-white" />
               <select value={filterStorage} onChange={e => setFilterStorage(e.target.value)} className="px-3 py-2 rounded bg-gray-700 text-white">
@@ -263,54 +239,85 @@ export default function InventoraClient() {
           </div>
         )}
 
-        <table className="text-left w-full mt-3 table-auto text-sm">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Qty</th>
-              <th>Storage</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(filteredItems || []).map(it => {
-              const storage = (storageUnits.units || []).find(u => u.id === it.storageUnitId);
-              return (
-                <tr key={it.id} className="border-t">
-                  <td title={it.id}>{it.name}</td>
-                  <td>{it.qty}</td>
-                  <td title={it.storageUnitId}>{storage ? storage.name : "(no storage)"}</td>
-                  <td className="flex gap-1 my-1 justify-end">
-                    <button onClick={() => handleAddCount(it.id, 1)} className="p-1 rounded bg-green-600 text-white text-xs"><Plus size={16} /></button>
-                    <button onClick={() => handleAddCount(it.id, -1)} className="p-1 rounded bg-orange-500 text-white text-xs" disabled={it.qty === 0}><Minus size={16} /></button>
-                    <button onClick={() => setEditingItem(it)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={16} /></button>
-                    <button onClick={() => handleDeleteItem(it.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={16} /></button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="max-h-[33vh] overflow-y-auto">
+          <table className="text-left w-full table-auto text-sm border-collapse">
+            <thead>
+              <tr>
+                <th className="px-2 py-1">Name</th>
+                <th className="px-2 py-1">Qty</th>
+                <th className="px-2 py-1">Storage</th>
+                <th className="px-2 py-1"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {(filteredItems || []).map(it => {
+                const storage = (storageUnits.units || []).find(u => u.id === it.storageUnitId);
+                return (
+                  <tr key={it.id} className="border-t align-middle">
+                    <td title={it.id} className="px-2 py-2">{it.name}</td>
+                    <td className="px-2 py-2">{it.qty}</td>
+                    <td title={it.storageUnitId} className="px-2 py-2">
+                      {storage ? storage.name : "(no storage)"}
+                    </td>
+                    <td className="px-2 py-2">
+                      <div className="flex gap-1 justify-end items-center">
+                        <button
+                          onClick={() => handleAddCount(it.id, 1)}
+                          className="p-1 rounded bg-green-600 text-white text-xs"
+                        >
+                          <Plus size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleAddCount(it.id, -1)}
+                          className="p-1 rounded bg-orange-500 text-white text-xs disabled:opacity-50"
+                          disabled={it.qty === 0}
+                        >
+                          <Minus size={16} />
+                        </button>
+                        <button
+                          onClick={() => setEditingItem(it)}
+                          className="p-1 rounded bg-gray-600 text-white text-xs"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteItem(it.id)}
+                          className="p-1 rounded bg-red-600 text-white text-xs"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div className="mt-6 p-4 border rounded">
-        <div className="flex justify-between items-center mb-3">
+      <div className="mt-6 p-2 sm:p-4 border rounded">
+        <div className="flex justify-between items-center mb-3 p-2 sm:p-0">
           <h2 className="text-lg font-semibold">Storage Units</h2>
           <div className="flex gap-2">
             <IconButton title="Create storage unit" onClick={() => setCreatingStorage(true)} className="bg-blue-600 text-white"><Plus /></IconButton>
           </div>
         </div>
-        <ul className="mt-3">
-          {storageUnits.units && storageUnits.units.length ?
-            storageUnits.units.map(u => (
-              <li key={u.id} className="flex justify-between items-center py-1 border-b">
-                <div title={u.id}>{u.name}<span className="text-xs text-gray-500 ml-1">({u.id})</span></div>
-                <div className="flex gap-1">
-                  <button onClick={() => setEditingStorage(u)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={16} /></button>
-                  <button onClick={() => handleDeleteStorage(u.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={16} /></button>
-                </div>
-              </li>
-            )) : <li className="text-sm text-gray-500">No storage units</li>}
-        </ul>
+
+        <div className="max-h-[33vh] overflow-y-auto">
+          <ul>
+            {storageUnits.units && storageUnits.units.length ?
+              storageUnits.units.map(u => (
+                <li key={u.id} className="flex justify-between items-center py-1 border-b">
+                  <div title={u.id}>{u.name}<span className="text-xs text-gray-500 ml-1">({u.id})</span></div>
+                  <div className="flex gap-1">
+                    <button onClick={() => setEditingStorage(u)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={16} /></button>
+                    <button onClick={() => handleDeleteStorage(u.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={16} /></button>
+                  </div>
+                </li>
+              )) : <li className="text-sm text-gray-500">No storage units</li>}
+          </ul>
+        </div>
       </div>
 
       {showCreateMenu && (

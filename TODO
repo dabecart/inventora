@@ -1,0 +1,4 @@
+- Remove QR from the storage unit creation. Move it to a button in the storage units table.
+- Multiple inventories.
+- Access to inventory from another user?
+- Add loading symbol while the data is being fetched from Drive.

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { XIcon } from "lucide-react";
 
-import ManualHelper from "./helpers/ManualHelper";
+import ItemResume from "./ItemResume";
 
 export default function EditItemModal({ title = 'Edit Item', item = {}, storageUnits = [], metaKeys = [], onSave, onDiscard, validationFunction }) {
   const [name, setName] = useState(item.name || '');
@@ -32,7 +32,7 @@ export default function EditItemModal({ title = 'Edit Item', item = {}, storageU
           <button onClick={onDiscard} className="p-2 rounded-md"><XIcon /></button>
         </div>
 
-        <ManualHelper
+        <ItemResume
           storageUnits={storageUnits} 
           metaKeys={metaKeys} 
           name={name} 
@@ -44,7 +44,7 @@ export default function EditItemModal({ title = 'Edit Item', item = {}, storageU
           meta={meta} 
           setMeta={setMeta} 
           errors={errors}
-        ></ManualHelper>
+        ></ItemResume>
 
         <div className="flex justify-end gap-2 mt-6">
           <button onClick={onDiscard} className="px-4 py-2 rounded bg-gray-200 text-gray-700">Discard</button>

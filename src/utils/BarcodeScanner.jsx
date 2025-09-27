@@ -87,7 +87,7 @@ export default function BarcodeScanner({ onDetected, formats = ["ean_13", "qr_co
     return (
       <div>
         <div className="text-sm text-gray-500 mb-2">{"Snap or upload a photo of the code."}</div>
-        <PhotoMetaEditor value={images} onChange={setImages} disableGallery={true} />
+        <PhotoMetaEditor value={images} onChange={setImages} disableGallery={true} allowMultipleUploads={false}  />
         {notDetected && (
           <FieldError text="Code not detected."/>
         )} 
