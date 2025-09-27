@@ -18,8 +18,118 @@ import {simpleId, nowIso} from './Utils'
 //  - set_storage_meta
 //  - remove_storage_meta
 
-export default function InventoraActions(userId = '(anonymous)', inventory, setInventory, storageUnits, setStorageUnits, enqueueAction) {
+export function applyActionsToState(actionList, initialInv = { items: [] }, initialStor = { units: [] }) {
+  // Start from initial state.
+  const inv = { items: new Map((initialInv.items || []).map(it => [it.id, { ...it }])) };
+  const stores = { units: new Map((initialStor.units || []).map(u => [u.id, { ...u }])) };
 
+  // Sort by createdAt then by id for deterministic order.
+  const sorted = [...actionList].sort((a,b) => {
+    const ta = new Date(a.createdAt).getTime();
+    const tb = new Date(b.createdAt).getTime();
+    if (ta !== tb) return ta - tb;
+    return a.id.localeCompare(b.id);
+  });
+
+  for (const act of sorted) {
+    const p = act.payload || {};
+    switch (act.type) {
+      case 'create_item': {
+        if (!p.id) break;
+        inv.items.set(p.id, { id: p.id, name: p.name || 'Item', qty: Number(p.initialQty || 0), meta: p.meta || {}, storageUnitId: p.storageUnitId || null });
+        break;
+      }
+      case 'delete_item': {
+        if (!p.id) break;
+        inv.items.delete(p.id);
+        break;
+      }
+      case 'create_storage': {
+        if (!p.id) break;
+        stores.units.set(p.id, { id: p.id, name: p.name || 'Storage', meta: p.meta || {} });
+        break;
+      }
+      case 'delete_storage': {
+        if (!p.id) break;
+        stores.units.delete(p.id);
+        for (const it of inv.items.values()) {
+          if (it.storageUnitId === p.id) it.storageUnitId = null;
+        }
+        break;
+      }
+      case 'add_count': {
+        if (!p.id) break;
+        const it = inv.items.get(p.id);
+        if (!it) break;
+        it.qty = Math.max(0, Number(it.qty || 0) + Number(p.amount || 0)); // Clamp to >= 0
+        break;
+      }
+      case 'move_item': {
+        if (!p.id) break;
+        const it = inv.items.get(p.id);
+        if (!it) break;
+        it.storageUnitId = p.toStorageId || null;
+        break;
+      }
+      case 'rename_item': {
+        const it = inv.items.get(p.id);
+        if (it && p.name) it.name = p.name;
+        break;
+      }
+      case 'set_quantity': {
+        const it = inv.items.get(p.id);
+        if (it) it.qty = Math.max(0, Number(p.qty) || 0);
+        break;
+      }
+      case 'rename_storage': {
+        const st = stores.units.get(p.id);
+        if (st && p.name) st.name = p.name;
+        break;
+      }
+
+      case 'set_item_meta': {
+          const it = inv.items.get(p.id);
+          if (it) it.meta = { ...it.meta, [p.key]: p.value }; 
+          break;
+      } 
+
+      case 'remove_item_meta': {
+          const it = inv.items.get(p.id);
+          if (it) { 
+          const m = { ...it.meta }; 
+          delete m[p.key]; 
+          it.meta = m; 
+        } 
+        break;
+      } 
+
+      case 'set_storage_meta': {
+          const st = stores.units.get(p.id);
+          if (st) st.meta = { ...st.meta, [p.key]: p.value }; 
+          break;
+      } 
+
+      case 'remove_storage_meta': {
+          const st = stores.units.get(p.id);
+          if (st) { 
+          const m = { ...st.meta }; 
+          delete m[p.key]; 
+          st.meta = m; 
+        } 
+        break;
+      } 
+
+      default:
+        break;
+    }
+  }
+
+  const finalInv =  { version: 0, time: nowIso(), items: Array.from(inv.items.values()) };
+  const finalStor = { version: 0, time: nowIso(), units: Array.from(stores.units.values()) };
+  return { finalInv, finalStor };
+}
+
+export default function InventoraActions(userId = '(anonymous)', inventora, runInventoraAction, enqueueAction) {
   const itemMetaKeys    = ['Description', 'Tags','Part Number','Serial Number','Link','Manufacturer','Datasheet Link','Photos'];
   const storageMetaKeys = ['Location','Capacity','Description','Photos'];
   const MAX_PHOTOS_COUNT = 5;
@@ -267,152 +377,41 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
     return errors;
   }
 
-  function applyActionsToState(actionList, initialInv = { items: [] }, initialStor = { units: [] }) {
-    // Start from initial state
-    const inv = { items: new Map((initialInv.items || []).map(it => [it.id, { ...it }])) };
-    const stores = { units: new Map((initialStor.units || []).map(u => [u.id, { ...u }])) };
-
-    // Sort by createdAt then by id for deterministic order
-    const sorted = [...actionList].sort((a,b) => {
-      const ta = new Date(a.createdAt).getTime();
-      const tb = new Date(b.createdAt).getTime();
-      if (ta !== tb) return ta - tb;
-      return a.id.localeCompare(b.id);
-    });
-
-    for (const act of sorted) {
-      const p = act.payload || {};
-      switch (act.type) {
-        case 'create_item': {
-          if (!p.id) break;
-          inv.items.set(p.id, { id: p.id, name: p.name || 'Item', qty: Number(p.initialQty || 0), meta: p.meta || {}, storageUnitId: p.storageUnitId || null });
-          break;
-        }
-        case 'delete_item': {
-          if (!p.id) break;
-          inv.items.delete(p.id);
-          break;
-        }
-        case 'create_storage': {
-          if (!p.id) break;
-          stores.units.set(p.id, { id: p.id, name: p.name || 'Storage', meta: p.meta || {} });
-          break;
-        }
-        case 'delete_storage': {
-          if (!p.id) break;
-          stores.units.delete(p.id);
-          for (const it of inv.items.values()) {
-            if (it.storageUnitId === p.id) it.storageUnitId = null;
-          }
-          break;
-        }
-        case 'add_count': {
-          if (!p.id) break;
-          const it = inv.items.get(p.id);
-          if (!it) break;
-          it.qty = Math.max(0, Number(it.qty || 0) + Number(p.amount || 0)); // Clamp to >= 0
-          break;
-        }
-        case 'move_item': {
-          if (!p.id) break;
-          const it = inv.items.get(p.id);
-          if (!it) break;
-          it.storageUnitId = p.toStorageId || null;
-          break;
-        }
-        case 'rename_item': {
-          const it = inv.items.get(p.id);
-          if (it && p.name) it.name = p.name;
-          break;
-        }
-        case 'set_quantity': {
-          const it = inv.items.get(p.id);
-          if (it) it.qty = Math.max(0, Number(p.qty) || 0);
-          break;
-        }
-        case 'rename_storage': {
-          const st = stores.units.get(p.id);
-          if (st && p.name) st.name = p.name;
-          break;
-        }
-
-        case 'set_item_meta': {
-            const it = inv.items.get(p.id);
-            if (it) it.meta = { ...it.meta, [p.key]: p.value }; 
-            break;
-        } 
-
-        case 'remove_item_meta': {
-            const it = inv.items.get(p.id);
-            if (it) { 
-            const m = { ...it.meta }; 
-            delete m[p.key]; 
-            it.meta = m; 
-          } 
-          break;
-        } 
-
-        case 'set_storage_meta': {
-            const st = stores.units.get(p.id);
-            if (st) st.meta = { ...st.meta, [p.key]: p.value }; 
-            break;
-        } 
-
-        case 'remove_storage_meta': {
-            const st = stores.units.get(p.id);
-            if (st) { 
-            const m = { ...st.meta }; 
-            delete m[p.key]; 
-            st.meta = m; 
-          } 
-          break;
-        } 
-
-        default:
-          break;
-      }
-    }
-
-    const finalInv =  { version: 0, time: nowIso(), items: Array.from(inv.items.values()) };
-    const finalStor = { version: 0, time: nowIso(), units: Array.from(stores.units.values()) };
-    return { finalInv, finalStor };
-  }
-
   function createAction(type, payload) {
     return { id: `a-${simpleId()}`, type, payload, createdAt: nowIso(), actorId: userId };
   }
 
   function handleCreateItem(name, initialQty, storageUnitId, meta, validateOnly = false) {
     const id = `i-${simpleId()}`;
-    const payload = { id, name, initialQty: Number(initialQty || 0), storageUnitId, meta: (meta || {}) };
-    const action = createAction('create_item', payload);
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    const payload = { id, name, initialQty: Number(initialQty || 0), storageUnitId, meta: meta || {} };
+    const action = createAction("create_item", payload);
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setInventory(finalInv);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleDeleteItem(id, validateOnly = false) {
-    const action = createAction('delete_item', { id });
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("delete_item", { id });
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setInventory(finalInv);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleRenameItem(id, newName, validateOnly = false) {
-    const action = createAction('rename_item', { id, name: newName });
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("rename_item", { id, name: newName });
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setInventory(finalInv);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
@@ -420,115 +419,114 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
   function handleCreateStorage(name, meta, validateOnly = false) {
     const id = `s-${simpleId()}`;
     const payload = { id, name, meta };
-    const action = createAction('create_storage', payload);
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("create_storage", payload);
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setStorageUnits(finalStor);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleDeleteStorage(id, validateOnly = false) {
-    const action = createAction('delete_storage', { id });
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalInv, finalStor } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("delete_storage", { id });
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setStorageUnits(finalStor);
-      setInventory(finalInv);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleRenameStorage(id, newName, validateOnly = false) {
-    const action = createAction('rename_storage', { id, name: newName });
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("rename_storage", { id, name: newName });
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setStorageUnits(finalStor);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleSetQuantity(id, qty, validateOnly = false) {
     const amount = Number(qty || 0);
-    const action = createAction('set_quantity', { id, qty: amount });
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("set_quantity", { id, qty: amount });
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setInventory(finalInv);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleAddCount(id, amount, validateOnly = false) {
     const payload = { id, amount: Number(amount) };
-    const action = createAction('add_count', payload);
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("add_count", payload);
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setInventory(finalInv);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleMoveItem(id, toStorageId, validateOnly = false) {
     const payload = { id, toStorageId };
-    const action = createAction('move_item', payload);
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("move_item", payload);
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setInventory(finalInv);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleSetItemMeta(id, key, value, validateOnly = false) {
-    const action = createAction('set_item_meta', { id, key, value });
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("set_item_meta", { id, key, value });
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setInventory(finalInv);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleRemoveItemMeta(id, key, validateOnly = false) {
-    const action = createAction('remove_item_meta', { id, key });
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalInv } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("remove_item_meta", { id, key });
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setInventory(finalInv);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleSetStorageMeta(id, key, value, validateOnly = false) {
-    const action = createAction('set_storage_meta', { id, key, value });
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("set_storage_meta", { id, key, value });
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setStorageUnits(finalStor);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
 
   function handleRemoveStorageMeta(id, key, validateOnly = false) {
-    const action = createAction('remove_storage_meta', { id, key });
-    const errors = validateAction(action, inventory, storageUnits);
-    if(!errors && !validateOnly) {
-      const { finalStor } = applyActionsToState([action], inventory, storageUnits);
+    const action = createAction("remove_storage_meta", { id, key });
+    const errors = validateAction(action, inventora.inventory, inventora.storageUnits);
+
+    if (!errors && !validateOnly) {
       enqueueAction(action);
-      setStorageUnits(finalStor);
+      runInventoraAction({ type: "APPLY_ACTION", payload: action });
     }
     return errors;
   }
@@ -536,7 +534,6 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
   return {
     itemMetaKeys,
     storageMetaKeys,
-    applyActionsToState,
     handleCreateItem, 
     handleDeleteItem, 
     handleRenameItem, 

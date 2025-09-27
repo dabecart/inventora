@@ -1,7 +1,7 @@
-import { useEffect, useState, useRef } from "react";
-import {simpleId, nowIso, filenameTimeToIso} from './Utils'
+import { useEffect, useReducer, useRef } from "react";
+import { nowIso, filenameTimeToIso} from './Utils'
 import DriveManager from './Drive'
-import InventoraActions from './InventoraActions'
+import InventoraActions, { applyActionsToState } from './InventoraActions'
 
 export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
   const INVENTORY_FILENAME = "inventory.json";
@@ -9,8 +9,39 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
   const POLL_INTERVAL_MS = 10 * 1000; // 10 seconds
   const MERGE_REMOTE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
-  const [inventory, setInventory] = useState({ version: 0, items: [] });
-  const [storageUnits, setStorageUnits] = useState({ version: 0, units: [] });
+  const initialState = {
+    inventory: { version: 0, items: [] },
+    storageUnits: { version: 0, units: [] },
+  };
+
+  function reducerFunc(state, action) {
+    switch (action.type) {
+      case "SET_INVENTORY": {
+        return {
+          inventory: action.payload ?? state.inventory,
+          storageUnits: state.storageUnits
+        };
+      }
+
+      case "SET_STORAGE": {
+        return {
+          inventory: state.inventory,
+          storageUnits: action.payload ?? state.storageUnits
+        };
+      }
+
+      case "APPLY_ACTION": {
+        const { finalInv, finalStor } = applyActionsToState([action.payload], state.inventory, state.storageUnits);
+        return {
+          inventory: finalInv ?? state.inventory,
+          storageUnits: finalStor ?? state.storageUnits,
+        };
+      }
+
+      default: return state;
+    }
+  }
+  const [ inventora, runInventoraAction ] = useReducer(reducerFunc, initialState);
 
   // Local pending actions queue (not yet pushed to Drive).
   const localPendingActions = useRef([]);
@@ -39,7 +70,6 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
   const {
     itemMetaKeys,
     storageMetaKeys,
-    applyActionsToState,
     handleCreateItem, 
     handleDeleteItem, 
     handleRenameItem, 
@@ -53,7 +83,7 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     handleRemoveItemMeta, 
     handleSetStorageMeta, 
     handleRemoveStorageMeta
-  } = InventoraActions(userId, inventory, setInventory, storageUnits, setStorageUnits, enqueueAction);
+  } = InventoraActions(userId, inventora, runInventoraAction, enqueueAction);
 
   // Loads files from Drive at the start.
   useEffect(() => {
@@ -71,7 +101,7 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
   // Polling functions to check for local/remote merges.
   const pollingIntervalRunning = useRef(false);
   useEffect(() => {
-    if (!signedIn || !accessToken || !folderId || !inventory.time || !storageUnits.time) return;
+    if (!signedIn || !accessToken || !folderId || !inventora.inventory.time || !inventora.storageUnits.time) return;
 
     async function mergeActionsInterval() {
       if (pollingIntervalRunning.current) return; // Prevent overlap
@@ -80,8 +110,8 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
         // ---- LOCAL MERGE ----
         const newestTime = await getLatestActionTimeInRemote();
         const localTime = Math.min(
-          new Date(inventory.time || 0).getTime(),
-          new Date(storageUnits.time || 0).getTime()
+          new Date(inventora.inventory.time || 0).getTime(),
+          new Date(inventora.storageUnits.time || 0).getTime()
         );
         const newestTimeMs = new Date(newestTime).getTime();
 
@@ -111,7 +141,7 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     mergeActionsInterval();
 
     return () => clearInterval(poll);
-  }, [signedIn, accessToken, folderId, inventory.time, storageUnits.time]);
+  }, [signedIn, accessToken, folderId, inventora.inventory.time, inventora.storageUnits.time]);
 
   // Ask if the user really wants to exit when there are pending actions to be done.
   useEffect(() => {
@@ -130,31 +160,31 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
   async function loadMasters() {
     // Inventory.
     const invFile = await findFileByNameInFolder(INVENTORY_FILENAME);
+    const defaultInventory = { version: 1, items: [], time: nowIso() };
     if (!invFile) {
-      const initial = { version: 1, items: [], time: nowIso() };
-      await createFileMultipart(INVENTORY_FILENAME, folderId, initial);
-      setInventory(initial);
+      await createFileMultipart(INVENTORY_FILENAME, folderId, defaultInventory);
+      runInventoraAction({ type: "SET_INVENTORY", payload: defaultInventory });
     } else {
       const txt = await downloadFileText(invFile.id);
       try { 
-        setInventory(JSON.parse(txt)); 
+        runInventoraAction({ type: "SET_INVENTORY", payload: JSON.parse(txt) });
       } catch(e) { 
-        setInventory({ version: 1, items: [], time: nowIso() }); 
+        runInventoraAction({ type: "SET_INVENTORY", payload: defaultInventory });
       }
     }
 
     // Storage.
     const storFile = await findFileByNameInFolder(STORAGE_FILENAME);
+    const defaultStorage = { version: 1, units: [], time: nowIso() };
     if (!storFile) {
-      const initial = { version: 1, units: [], time: nowIso() };
-      await createFileMultipart(STORAGE_FILENAME, folderId, initial);
-      setStorageUnits(initial);
+      await createFileMultipart(STORAGE_FILENAME, folderId, defaultStorage);
+      runInventoraAction({ type: "SET_STORAGE", payload: defaultStorage });
     } else {
       const txt = await downloadFileText(storFile.id);
       try { 
-        setStorageUnits(JSON.parse(txt)); 
-      } catch(e) { 
-        setStorageUnits({ version: 1, units: [], time: nowIso() }); 
+        runInventoraAction({ type: "SET_STORAGE", payload: JSON.parse(txt) });
+    } catch(e) { 
+        runInventoraAction({ type: "SET_STORAGE", payload: defaultStorage });
       }
     }
   }
@@ -263,8 +293,9 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     } else {
       await createFileMultipart(STORAGE_FILENAME, folderId, finalStor);
     }
-    setInventory(finalInv);
-    setStorageUnits(finalStor);
+
+    runInventoraAction({ type: "SET_INVENTORY", payload: finalInv });
+    runInventoraAction({ type: "SET_STORAGE", payload: finalStor });
     setMergeLog(l => [`Merged ${actionsToApply.length} remote actions into Drive`, ...l]);
   }
 
@@ -287,8 +318,8 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
 
   async function mergeLocalActions() {
     const localTime = Math.max(
-      new Date(inventory.time || 0).getTime(),
-      new Date(storageUnits.time || 0).getTime()
+      new Date(inventora.inventory.time || 0).getTime(),
+      new Date(inventora.storageUnits.time || 0).getTime()
     );
     const [actions, times] = await getRemoteActionsAfter(new Date(localTime).toISOString());
     if (!actions.length) return;
@@ -297,12 +328,12 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     const latestActionTime = sortedTimes[sortedTimes.length - 1];
     const mergeTime = latestActionTime ? new Date(latestActionTime).toISOString() : nowIso();
     
-    const { finalInv, finalStor } = applyActionsToState(actions, inventory, storageUnits);
+    const { finalInv, finalStor } = applyActionsToState(actions, inventora.inventory, inventora.storageUnits);
     finalInv.time = mergeTime;
     finalStor.time = mergeTime;
     
-    setInventory(finalInv);
-    setStorageUnits(finalStor);
+    runInventoraAction({ type: "SET_INVENTORY", payload: finalInv });
+    runInventoraAction({ type: "SET_STORAGE", payload: finalStor });
     setMergeLog(l => [`Merged ${actions.length} remote actions into local state`, ...l]);
   }
 
@@ -311,8 +342,7 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     storageMetaKeys,
     signedIn,
     userId,
-    inventory,
-    storageUnits,
+    inventora,
     localPendingActions,
     handleAuthButton,
     pushLocalPending,

@@ -42,8 +42,7 @@ export default function InventoraClient() {
     storageMetaKeys,
     signedIn,
     userId,
-    inventory,
-    storageUnits,
+    inventora,
     localPendingActions,
     handleAuthButton,
     pushLocalPending,
@@ -180,7 +179,7 @@ export default function InventoraClient() {
   }
 
   // ---------------- Search ----------------
-  const filteredItems = (inventory.items || []).filter(it => {
+  const filteredItems = (inventora.inventory.items || []).filter(it => {
     if (itemQuery && !it.name.toLowerCase().includes(itemQuery.toLowerCase())) return false;
     if (filterStorage && it.storageUnitId !== filterStorage) return false;
     return true;
@@ -236,7 +235,7 @@ export default function InventoraClient() {
               <input value={itemQuery} onChange={e => setItemQuery(e.target.value)} placeholder="Search by name..." className="flex-1 px-1 py-2 rounded bg-gray-700 text-white" />
               <select value={filterStorage} onChange={e => setFilterStorage(e.target.value)} className="px-3 py-2 rounded bg-gray-700 text-white">
                 <option value="">All storages</option>
-                {(storageUnits.units || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {(inventora.storageUnits.units || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
           </div>
@@ -254,7 +253,7 @@ export default function InventoraClient() {
             </thead>
             <tbody>
               {(filteredItems || []).map(it => {
-                const storage = (storageUnits.units || []).find(u => u.id === it.storageUnitId);
+                const storage = (inventora.storageUnits.units || []).find(u => u.id === it.storageUnitId);
                 return (
                   <tr key={it.id} className="border-t align-middle">
                     <td title={it.id} className="px-2 py-2">{it.name}</td>
@@ -309,8 +308,8 @@ export default function InventoraClient() {
 
         <div className="max-h-[33vh] overflow-y-auto">
           <ul>
-            {storageUnits.units && storageUnits.units.length ?
-              storageUnits.units.map((u, index) => (
+            {inventora.storageUnits.units && inventora.storageUnits.units.length ?
+              inventora.storageUnits.units.map((u, index) => (
                 <li key={u.id} className={`flex justify-between items-center p-2 ${index !== 0 && ("border-t")}`}>
                   <div title={u.id}>{u.name}<span className="text-xs text-gray-500 ml-1">({u.id})</span></div>
                   <div className="flex gap-1">
@@ -331,7 +330,7 @@ export default function InventoraClient() {
             setShowCreateMenu(false);
           }}
           onClose={() => { setShowCreateMenu(false); }}
-          storageUnits={storageUnits.units}
+          storageUnits={inventora.storageUnits.units}
           metaKeys={itemMetaKeys}
           validationFunction={validateItemFromNewForm}
           handleCreateItem={handleCreateItem}
@@ -341,7 +340,7 @@ export default function InventoraClient() {
       {editingItem && (
         <EditItemModal
           item={editingItem}
-          storageUnits={storageUnits.units}
+          storageUnits={inventora.storageUnits.units}
           metaKeys={itemMetaKeys}
           onSave={(updated) => {
             // Apply everything in bulk.
