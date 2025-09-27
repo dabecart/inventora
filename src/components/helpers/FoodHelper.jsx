@@ -119,107 +119,196 @@ export default function FoodHelper({ storageUnits = [], metaKeys = [], validatio
   function getJSX() {
     return (
       <div className="bg-gray-900 text-gray-900 text-white rounded-lg w-full max-w-3xl relative">
-        {view === "barcode" && !product && (
-          <div>
-            <BarcodeScanner onDetected={onDetectedBarcode} formats={['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128']} />
+        <AnimatePresence mode="wait">
+          {view === "barcode" && !product && (
+            <motion.div
+              key="barcode-scan"
+              initial={{ opacity: 0, x: -40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 40 }}
+              transition={{ duration: 0.3 }}
+            >
+              <BarcodeScanner
+                onDetected={onDetectedBarcode}
+                formats={["ean_13", "ean_8", "upc_a", "upc_e", "code_128"]}
+              />
 
-            <div className="flex gap-2 mt-6">
-              {isLoading && (
-                <Spinner/>
-              )}
+              <div className="flex gap-2 mt-6">
+                {isLoading && <Spinner />}
 
-              <button onClick={() => goToView("storage")} className="ml-auto px-4 py-2 rounded bg-gray-200 text-gray-700">Skip</button>
-            </div>
-          </div>
-        )}
+                <button
+                  onClick={() => goToView("storage")}
+                  className="ml-auto px-4 py-2 rounded bg-gray-200 text-gray-700"
+                >
+                  Skip
+                </button>
+              </div>
+            </motion.div>
+          )}
 
-        {view === "barcode" && product && (
-          <div>
-            <div className="p-4 border rounded grid sm:grid-cols-1 sm:grid-cols-3 gap-4">
+          {view === "barcode" && product && (
+            <motion.div
+              key="barcode-product"
+              initial={{ opacity: 0, x: -40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 40 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="p-4 border rounded grid sm:grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Product images</label>
+                  <label className="block text-sm text-gray-400 mb-1">
+                    Product images
+                  </label>
                   <PhotoMetaEditor value={images} onChange={setImages} />
                 </div>
                 <div className="sm:col-span-2 flex flex-col">
                   <label className="block text-sm text-gray-400 mb-1">Name</label>
-                  <input 
-                    value={product.name || ''} 
-                    onChange={e => setProductField('name', e.target.value)} 
-                    className={`w-full px-3 py-2 rounded border border-gray-300 bg-gray-800`} />
+                  <input
+                    value={product.name || ""}
+                    onChange={(e) => setProductField("name", e.target.value)}
+                    className={`w-full px-3 py-2 rounded border border-gray-300 bg-gray-800`}
+                  />
 
-                  <label className="block text-sm text-gray-400 mb-1 mt-2">Manufacturer</label>
-                  <input 
-                    value={product.manufacturer || ''} 
-                    onChange={e => setProductField('manufacturer', e.target.value)} 
-                    className={`w-full px-3 py-2 rounded border border-gray-300 bg-gray-800`} />
+                  <label className="block text-sm text-gray-400 mb-1 mt-2">
+                    Manufacturer
+                  </label>
+                  <input
+                    value={product.manufacturer || ""}
+                    onChange={(e) =>
+                      setProductField("manufacturer", e.target.value)
+                    }
+                    className={`w-full px-3 py-2 rounded border border-gray-300 bg-gray-800`}
+                  />
 
-
-                  <div className="text-xs text-gray-500 mt-2">Barcode: {product.barcode}</div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    Barcode: {product.barcode}
+                  </div>
                 </div>
               </div>
 
               <div className="flex gap-2 mt-6">
-                {productError !== null && (
-                  <FieldError text={productError}/>
+                {productError !== null && <FieldError text={productError} />}
+
+                <button
+                  onClick={() => {
+                    setProduct(null);
+                    setImages([]);
+                  }}
+                  className="ml-auto px-3 py-2 rounded bg-gray-200 text-gray-700"
+                >
+                  Scan again
+                </button>
+                <button
+                  onClick={handleUseBarcodeInfo}
+                  className="px-3 py-2 rounded bg-blue-600 text-white"
+                >
+                  Next
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {view === "storage" && (
+            <motion.div
+              key="storage"
+              initial={{ opacity: 0, x: -40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 40 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="flex flex-col flex-gap-1">
+                {storageId === null && (
+                  <BarcodeScanner
+                    onDetected={onDetectedStorage}
+                    formats={["qr_code"]}
+                    hintText="Scan storage sticker QR"
+                  />
                 )}
 
-                <button onClick={() => { setProduct(null); setImages([]); }} className="ml-auto px-3 py-2 rounded bg-gray-200 text-gray-700">Scan again</button>
-                <button onClick={handleUseBarcodeInfo} className="px-3 py-2 rounded bg-blue-600 text-white">Next</button>
+                {storageIdError !== null && (
+                  <FieldError text={storageIdError} />
+                )}
+
+                <label className="block text-sm text-gray-400 mb-1 mt-8">
+                  Storage
+                </label>
+                <select
+                  value={storageId || ""}
+                  onChange={(e) => setStorageId(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded border border-gray-300 bg-gray-800"
+                >
+                  <option value="">(no storage)</option>
+                  {storageUnits.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="flex justify-end gap-2 mt-4">
+                  {storageId !== null && (
+                    <button
+                      onClick={() => {
+                        setStorageId(null);
+                        setStorageIdError(null);
+                      }}
+                      className="ml-auto px-3 py-2 rounded bg-gray-200 text-gray-700"
+                    >
+                      Scan again
+                    </button>
+                  )}
+                  <button
+                    onClick={() => goToView("resume")}
+                    className="px-3 py-2 rounded bg-blue-600 text-white"
+                  >
+                    Continue
+                  </button>
+                </div>
               </div>
-          </div>
-        )}
+            </motion.div>
+          )}
 
-        {view === "storage" && (
-          <div className="flex flex-col flex-gap-1">
-            {storageId === null && (
-              <BarcodeScanner onDetected={onDetectedStorage} formats={['qr_code']} hintText="Scan storage sticker QR" />
-            )}
-
-            {storageIdError !== null && (
-              <FieldError text={storageIdError}/>
-            )} 
-
-            <label className="block text-sm text-gray-400 mb-1 mt-8">Storage</label>
-            <select value={storageId || ''} onChange={e => setStorageId(e.target.value)} className="flex-1 px-3 py-2 rounded border border-gray-300 bg-gray-800">
-              <option value="">(no storage)</option>
-              {storageUnits.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            
-            <div className="flex justify-end gap-2 mt-4">
-              {storageId !== null && (
-                <button onClick={() => { setStorageId(null); setStorageIdError(null); }} className="ml-auto px-3 py-2 rounded bg-gray-200 text-gray-700">Scan again</button>
-              )}
-              <button onClick={() => goToView("resume")} className="px-3 py-2 rounded bg-blue-600 text-white">Continue</button>
-            </div>
-          </div>
-        )}
-
-        {view === "resume" && (
-          <div className="flex flex-col flex-gap-1">
-            <ItemResume
-              storageUnits={storageUnits} 
-              metaKeys={metaKeys} 
-              name={name} 
-              setName={setName} 
-              qty={qty} 
-              setQty={setQty} 
-              storageId={storageId} 
-              setStorageId={setStorageId} 
-              meta={meta} 
-              setMeta={setMeta} 
-              errors={errors}
-            />
-            <div className="flex justify-end gap-2 mt-6">
-              <button 
-                onClick={() => handleSaveNewItem({name, storageId, qty, meta})} 
-                disabled={hasErrors}
-                className={`px-4 py-2 rounded ${hasErrors ? 'bg-gray-400 text-gray-700' : 'bg-blue-600 text-white'}`}>
-                  Add item
-              </button>
-            </div>
-          </div>
-        )}
-
+          {view === "resume" && (
+            <motion.div
+              key="resume"
+              initial={{ opacity: 0, x: -40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 40 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="flex flex-col flex-gap-1">
+                <ItemResume
+                  storageUnits={storageUnits}
+                  metaKeys={metaKeys}
+                  name={name}
+                  setName={setName}
+                  qty={qty}
+                  setQty={setQty}
+                  storageId={storageId}
+                  setStorageId={setStorageId}
+                  meta={meta}
+                  setMeta={setMeta}
+                  errors={errors}
+                />
+                <div className="flex justify-end gap-2 mt-6">
+                  <button
+                    onClick={() =>
+                      handleSaveNewItem({ name, storageId, qty, meta })
+                    }
+                    disabled={hasErrors}
+                    className={`px-4 py-2 rounded ${
+                      hasErrors
+                        ? "bg-gray-400 text-gray-700"
+                        : "bg-blue-600 text-white"
+                    }`}
+                  >
+                    Add item
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }

@@ -63,7 +63,7 @@ export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, v
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-      <div className="bg-gray-900 rounded-lg p-6 w-full max-w-3xl">
+      <div className="bg-gray-900 rounded-lg p-6 w-full max-w-3xl max-h-full overflow-y-auto overflow-x-hidden">
         <div className="flex justify-between items-center mb-4">
           {helperID !== null && <button onClick={goBack} className="p-2 rounded-md mr-2"><ChevronLeft /></button>} 
           <h3 className="text-xl font-semibold">{menuName}</h3>
@@ -90,7 +90,7 @@ export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, v
             </motion.div>
           )}
 
-            {helperID !== null && (
+          {helperID !== null && (
             <motion.div
               key={helperID}
               initial={{ opacity: 0, x: -50 }}

@@ -204,17 +204,18 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
       }
 
       case 'set_item_meta': {
-        if ((inventory.items || []).every(it => it.id !== p.id)) {
+        const item = (inventory.items || []).find(it => it.id === p.id)
+        if(!item) {
           addError("id", "ID does not exist.");
         }
+
         const metaError = validateItemsMeta(p.key, p.value);
         if(metaError) {
           addMetaError(p.key, metaError);
-        } else {
-          const item = inventory.items.find((it) => it.id === p.id) || null;
-          if(item !== null && item.meta[p.key] === p.value) {
-            addMetaError(p.key, "Meta value has not changed.");
-          } 
+        }else if(!!item) {
+          if(p.key in item.meta) {
+            if(JSON.stringify(item.meta[p.key]) === JSON.stringify(p.value)) addMetaError(p.key, "Values haven't changed.");
+          }
         }
         break;
       }
@@ -232,11 +233,19 @@ export default function InventoraActions(userId = '(anonymous)', inventory, setI
       }
 
       case 'set_storage_meta': {
-        if ((storageUnits.units || []).every(it => it.id !== p.id)) {
+        const unit = (storageUnits.units || []).find(it => it.id === p.id)
+        if(!unit) {
           addError("id", "ID does not exist.");
         }
+
         const metaError = validateStoragesMeta(p.key, p.value);
-        if(metaError) addMetaError(p.key, metaError);
+        if(metaError) {
+          addMetaError(p.key, metaError);
+        }else if(!!unit) {
+          if(p.key in unit.meta) {
+            if(JSON.stringify(unit.meta[p.key]) === JSON.stringify(p.value)) addMetaError(p.key, "Values haven't changed.");
+          }
+        }
         break;
       }
 

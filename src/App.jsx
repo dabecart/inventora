@@ -6,6 +6,7 @@ import {
     Search,
     Plus,
     Minus,
+    QrCode
 } from "lucide-react";
 
 import Inventora from './Inventora'
@@ -15,6 +16,7 @@ import MenuHeader from "./components/MenuHeader";
 import HelpersMenu from "./components/HelpersMenu";
 import EditItemModal from "./components/EditItemModal";
 import EditStorageModal from "./components/EditStorageModal";
+import CreateStickerModal from "./components/CreateStickerModal";
 
 export default function InventoraClient() {
   const [status, setStatus] = useState("Not signed in");
@@ -26,6 +28,7 @@ export default function InventoraClient() {
   const [editingItem, setEditingItem] = useState(null);
   const [creatingStorage, setCreatingStorage] = useState(null);
   const [editingStorage, setEditingStorage] = useState(null);
+  const [creatingSticker, setCreatingSticker] = useState(null);
 
   const [showCreateMenu, setShowCreateMenu] = useState(false);
 
@@ -106,7 +109,7 @@ export default function InventoraClient() {
         errorResults.push(handleSetItemMeta(editingItem.id, k, v, true) || null);
       }else {
         errorResults.push(
-          (editingItem.meta[k] !== meta[k]) ? 
+          (JSON.stringify(editingItem.meta[k]) !== JSON.stringify(meta[k])) ? 
           handleSetItemMeta(editingItem.id, k, v, true) || null :
           null
         );
@@ -150,7 +153,7 @@ export default function InventoraClient() {
         errorResults.push(handleSetStorageMeta(editingStorage.id, k, v, true) || null);
       }else {
         errorResults.push(
-          (editingStorage.meta[k] !== meta[k]) ? 
+          (JSON.stringify(editingStorage.meta[k]) !== JSON.stringify(meta[k])) ? 
           handleSetStorageMeta(editingStorage.id, k, v, true) || null :
           null
         );
@@ -192,7 +195,7 @@ export default function InventoraClient() {
 
   // ---------------- Render UI ----------------
   return (
-    <div className="p-6 max-w-5xl w-full mx-auto">
+    <div className="p-2 max-w-5xl w-full mx-auto">
 
       <MenuHeader signedIn={signedIn} userId={userId} status={status} manualPush={manualPush} localPendingActions={localPendingActions} handleAuthButton={handleAuthButton}/>
 
@@ -230,7 +233,7 @@ export default function InventoraClient() {
         {showFindItems && (
           <div className="mb-3 sm:p-3 rounded">
             <div className="flex gap-2">
-              <input value={itemQuery} onChange={e => setItemQuery(e.target.value)} placeholder="Search by name..." className="flex-1 px-3 py-2 rounded bg-gray-700 text-white" />
+              <input value={itemQuery} onChange={e => setItemQuery(e.target.value)} placeholder="Search by name..." className="flex-1 px-1 py-2 rounded bg-gray-700 text-white" />
               <select value={filterStorage} onChange={e => setFilterStorage(e.target.value)} className="px-3 py-2 rounded bg-gray-700 text-white">
                 <option value="">All storages</option>
                 {(storageUnits.units || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -307,10 +310,11 @@ export default function InventoraClient() {
         <div className="max-h-[33vh] overflow-y-auto">
           <ul>
             {storageUnits.units && storageUnits.units.length ?
-              storageUnits.units.map(u => (
-                <li key={u.id} className="flex justify-between items-center py-1 border-b">
+              storageUnits.units.map((u, index) => (
+                <li key={u.id} className={`flex justify-between items-center p-2 ${index !== 0 && ("border-t")}`}>
                   <div title={u.id}>{u.name}<span className="text-xs text-gray-500 ml-1">({u.id})</span></div>
                   <div className="flex gap-1">
+                    <button onClick={() => setCreatingSticker(u)} className="p-1 rounded bg-pink-600 text-white text-xs"><QrCode size={16} /></button>
                     <button onClick={() => setEditingStorage(u)} className="p-1 rounded bg-gray-600 text-white text-xs"><Pencil size={16} /></button>
                     <button onClick={() => handleDeleteStorage(u.id)} className="p-1 rounded bg-red-600 text-white text-xs"><Trash2 size={16} /></button>
                   </div>
@@ -356,6 +360,15 @@ export default function InventoraClient() {
           }}
           onDiscard={() => setEditingItem(null)}
           validationFunction={validateItemFromEditForm}
+        />
+      )}
+
+      {creatingSticker && (
+        <CreateStickerModal
+          unit={creatingSticker}
+          onClose={() => {
+            setCreatingSticker(null);
+          }}
         />
       )}
 

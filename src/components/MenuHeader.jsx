@@ -19,7 +19,7 @@ export default function MenuHeader({ signedIn, userId, status, manualPush, local
   }, []);
 
   return (
-    <header className="flex items-center justify-between my-6 relative">
+    <header className="flex items-center justify-between my-4 px-4 relative">
       {/* Left */}
       <div className="flex items-center gap-4">
         <h1

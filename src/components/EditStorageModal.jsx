@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { generateStorageStickerDataUrl, shareOrPrintDataUrl } from "../utils/StickerUtils";
 import MetaEditor from "./MetaEditor";
 import FieldError from "./FieldError";
 import { XIcon, QrCode } from "lucide-react";
@@ -7,9 +6,9 @@ import { XIcon, QrCode } from "lucide-react";
 export default function EditStorageModal({ title = 'Edit Storage', unit = {}, metaKeys = [], onSave, onDiscard, validationFunction}) {
   const [name, setName] = useState(unit.name || '');
   const [meta, setMeta] = useState({ ...(unit.meta || {}) });
-  const [isGenerating, setIsGenerating] = useState(false);
 
   const errors = validationFunction(name.trim(), meta) || {};
+  const hasErrors = Object.keys(errors).length > 0;
 
   function handleSave() {
     const formErr = validationFunction(name.trim(), meta) || {};
@@ -17,21 +16,6 @@ export default function EditStorageModal({ title = 'Edit Storage', unit = {}, me
       onSave({ name: name.trim(), meta });
     }
   }
-
-  async function handleGenerateSticker() {
-    setIsGenerating(true);
-    try {
-      const dataUrl = await generateStorageStickerDataUrl({ id: unit.id || 'unknown-id', name: name || '(no name)' });
-      await shareOrPrintDataUrl(dataUrl, `${(name || 'storage')}_sticker.png`);
-    } catch (e) {
-      console.error('Sticker generation failed', e);
-      alert('Could not generate sticker: ' + (e.message || e));
-    } finally {
-      setIsGenerating(false);
-    }
-  }
-
-  const hasErrors = Object.keys(errors).length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
@@ -54,14 +38,6 @@ export default function EditStorageModal({ title = 'Edit Storage', unit = {}, me
               <MetaEditor meta={meta} allowedKeys={metaKeys} onChange={m => setMeta(m)} validationErrors={errors.meta || {}} />
             </div>
           </div>
-
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Sticker</label>
-            <button onClick={handleGenerateSticker} disabled={isGenerating} className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded bg-gray-800 text-white">
-              <QrCode /> {isGenerating ? 'Generating…' : 'Generate Sticker'}
-            </button>
-          </div>
-
         </div>
 
         <div className="flex justify-end gap-2 mt-6">
