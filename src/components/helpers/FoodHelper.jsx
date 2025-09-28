@@ -5,7 +5,7 @@ import { ShoppingCart } from "lucide-react";
 import BarcodeScanner from "../../utils/BarcodeScanner";
 import MenuViews from "../../utils/MenuViews";
 import PhotoMetaEditor, {resizeAndCompress} from "../PhotoMetaEditor";
-import { simpleId } from "../../Utils";
+import { simpleId } from "../../utils/Utils";
 import Spinner from "../Spinner";
 import FieldError from "../FieldError";
 import ItemResume from "../ItemResume";

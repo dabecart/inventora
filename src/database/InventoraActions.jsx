@@ -1,4 +1,4 @@
-import {simpleId, nowIso} from './Utils'
+import {simpleId, nowIso} from '../utils/Utils'
 
 // ---------------- Action model & applying ----------------
 // Define allowed action types and their payload shape

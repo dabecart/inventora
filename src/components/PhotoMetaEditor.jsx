@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { simpleId } from "../Utils";
+import { simpleId } from "../utils/Utils";
 import {  
     Camera,
     Image as ImageIcon,

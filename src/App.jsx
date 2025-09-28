@@ -9,7 +9,7 @@ import {
     QrCode
 } from "lucide-react";
 
-import Inventora from './Inventora'
+import Inventora from './database/Inventora'
 import IconButton from "./components/IconButton";
 
 import MenuHeader from "./components/MenuHeader";

@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from "react";
-import { nowIso, filenameTimeToIso} from './Utils'
-import DriveManager from './Drive'
+import { nowIso, filenameTimeToIso} from '../utils/Utils'
+import DriveManager from '../utils/Drive'
 import InventoraActions, { applyActionsToState } from './InventoraActions'
 
 export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
