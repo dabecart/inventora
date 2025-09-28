@@ -75,7 +75,7 @@ export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, v
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-      <div className="bg-gray-900 rounded-lg p-6 w-full max-w-3xl max-h-full min-h-[40vh] overflow-y-auto overflow-x-hidden flex flex-col">
+      <div className="bg-gray-900 rounded-lg p-6 w-full max-w-3xl max-h-full min-h-[50vh] overflow-y-auto overflow-x-hidden flex flex-col">
         <div className="flex justify-between items-center mb-4">
           {helperID !== null && <button onClick={goBack} className="p-2 rounded-md mr-2"><ChevronLeft /></button>} 
           <h3 className="text-xl font-semibold">{menuName}</h3>
