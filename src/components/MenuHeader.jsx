@@ -30,7 +30,7 @@ export default function MenuHeader({ signedIn, userId, status, manualPush, local
         </h1>
       </div>
 
-      {/* Right */}
+      {/* Right buttons */}
       <div className="flex items-center gap-2">
         {/* Push button */}
         {(localPendingActions.current || []).length === 0 ? (
@@ -46,6 +46,7 @@ export default function MenuHeader({ signedIn, userId, status, manualPush, local
             title="Push pending"
             onClick={manualPush}
             className="bg-green-600 text-white relative animate-pulse-glow"
+            style={{"--pulse-glow-color": "34,197,94"}}
           >
             <UploadCloud />
           </IconButton>
@@ -53,13 +54,24 @@ export default function MenuHeader({ signedIn, userId, status, manualPush, local
 
         {/* User menu */}
         <div className="relative" ref={menuRef}>
-          <IconButton
-            title={signedIn ? "User menu" : "Log in"}
-            onClick={() => setMenuOpen((o) => !o)}
-            className={`text-white ${signedIn ? "bg-sky-600" : "bg-gray-700"}`}
-          >
-            <User />
-          </IconButton>
+          {signedIn ? (
+            <IconButton
+              title="User menu"
+              onClick={() => setMenuOpen((o) => !o)}
+              className="text-white bg-sky-600 relative"
+            >
+              <User />
+            </IconButton>
+          ) : (
+            <IconButton
+              title="Log in"
+              onClick={() => setMenuOpen((o) => !o)}
+              className={"text-white bg-gray-700 relative animate-pulse-glow"}
+              style={{"--pulse-glow-color": "59,130,246"}}
+            >
+              <User />
+            </IconButton>
+          )}
 
           {menuOpen && (
             <div className="absolute right-0 mt-2 max-w-[80vw] sm:max-w-[33vw] bg-white rounded-xl shadow-lg ring-1 ring-black/10 z-50">

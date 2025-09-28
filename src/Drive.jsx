@@ -201,20 +201,16 @@ export default function createDriveManager(setStatus) {
     await driveFetch(`/files/${fileId}`, { method: 'DELETE' }); 
   }
 
+  function signin() {
+    if (!tokenClientRef.current) throw new Error('Token client not initialized');
+    tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
+  }
+
   function signout() {
     setAccessToken(null);
     setSignedIn(false);
     setStatus('Not signed in');
     localStorage.removeItem('accessToken');
-  }
-
-  function handleAuthButton() {
-    if (signedIn) {
-      signout();
-    } else {
-      if (!tokenClientRef.current) throw new Error('Token client not initialized');
-      tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
-    }
   }
 
   return {
@@ -230,6 +226,7 @@ export default function createDriveManager(setStatus) {
     createFileMultipart,
     updateFileMedia,
     deleteFile,
-    handleAuthButton
+    signin,
+    signout
   };
 }

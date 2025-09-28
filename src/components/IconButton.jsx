@@ -1,7 +1,13 @@
-export default function IconButton({ title, onClick, children, className = '', isDisabled = false }) {
+export default function IconButton({ title, onClick, children, className = '', style = {}, isDisabled = false }) {
   return (
-    <button onClick={onClick} disabled={isDisabled} title={title} className={`flex items-center justify-center p-2 rounded-md hover:opacity-90 h-full ${className}`}>
-      {children}
+    <button 
+      onClick={onClick} 
+      disabled={isDisabled} 
+      title={title} 
+      className={`flex items-center justify-center p-2 rounded-md hover:opacity-90 h-full ${className}`}
+      style={style}
+      >
+        {children}
     </button>
   );
 }

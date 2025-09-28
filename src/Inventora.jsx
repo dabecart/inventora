@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { nowIso, filenameTimeToIso} from './Utils'
 import DriveManager from './Drive'
 import InventoraActions, { applyActionsToState } from './InventoraActions'
@@ -42,6 +42,7 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     }
   }
   const [ inventora, runInventoraAction ] = useReducer(reducerFunc, initialState);
+  const [ mastersLoaded, setMastersLoaded ] = useState(false);
 
   // Local pending actions queue (not yet pushed to Drive).
   const localPendingActions = useRef([]);
@@ -64,7 +65,8 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     createFileMultipart,
     updateFileMedia,
     deleteFile,
-    handleAuthButton
+    signin,
+    signout
   } = DriveManager(setStatus);
 
   const {
@@ -85,11 +87,20 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     handleRemoveStorageMeta
   } = InventoraActions(userId, inventora, runInventoraAction, enqueueAction);
 
+  // Log in / log out
+  function handleAuthButton() {
+    if (signedIn) {
+      signout();
+      setMastersLoaded(false);
+    } else {
+      signin();
+    }
+  }
+
   // Loads files from Drive at the start.
   useEffect(() => {
     if (!signedIn || !accessToken || !folderId) return;
     (async () => {
-      setStatus('Loading master files...');
       await loadMasters();
       setStatus('Ready');
     })().catch(e => {
@@ -159,6 +170,7 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
   // ---------------- Loading master JSONs ----------------
   async function loadMasters() {
     // Inventory.
+    setStatus('Loading inventory...');
     const invFile = await findFileByNameInFolder(INVENTORY_FILENAME);
     const defaultInventory = { version: 1, items: [], time: nowIso() };
     if (!invFile) {
@@ -174,6 +186,7 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     }
 
     // Storage.
+    setStatus('Loading storage units...');
     const storFile = await findFileByNameInFolder(STORAGE_FILENAME);
     const defaultStorage = { version: 1, units: [], time: nowIso() };
     if (!storFile) {
@@ -187,6 +200,8 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
         runInventoraAction({ type: "SET_STORAGE", payload: defaultStorage });
       }
     }
+
+    setMastersLoaded(true);
   }
 
   // ---------------- Remote actions ----------------
@@ -341,6 +356,7 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     itemMetaKeys,
     storageMetaKeys,
     signedIn,
+    mastersLoaded,
     userId,
     inventora,
     localPendingActions,

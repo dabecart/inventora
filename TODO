@@ -4,3 +4,4 @@
 - Add loading symbol while the data is being fetched from Drive.
 - Add option to mobile phone users to upload a QR photo instead of scanning it?
 - Add button on the Link meta to go to the link on a new tab.
+- Deleting storage should delete items too? 
