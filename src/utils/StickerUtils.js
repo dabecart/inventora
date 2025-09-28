@@ -115,7 +115,6 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
-/* Share or print fallback */
 export async function shareSticker(dataUrl, filename = "sticker.png") {
   try {
     const blob = dataURLToBlob(dataUrl);
@@ -125,30 +124,29 @@ export async function shareSticker(dataUrl, filename = "sticker.png") {
       return { shared: true };
     }
   } catch (e) {
-    // fallthrough to print fallback
-    console.warn("Web Share failed, falling back to print:", e);
+    console.warn("Web Share failed:", e);
   }
 
-  // fallback: open new tab then print
-  const w = window.open("");
-  if (!w) {
-    // popup blocked, trigger download instead
-    downloadSticker(dataUrl, filename);
-    return { printed: false };
-  }
-  w.document.write(`
-    <html>
-      <head><title>${filename}</title></head>
-      <body style="margin:0; display:flex; justify-content:center; align-items:center; height:100vh;">
-        <img src="${dataUrl}" style="max-width:100%; max-height:100%;" />
-        <script>
-          window.onload = function(){ setTimeout(()=>{ window.print(); }, 250); };
-        </script>
-      </body>
-    </html>
-  `);
-  w.document.close();
-  return { printed: true };
+  // Fallback: open new tab then print
+  // const w = window.open("");
+  // if (!w) {
+  //   // Popup blocked, trigger download instead
+  //   downloadSticker(dataUrl, filename);
+  //   return { printed: false };
+  // }
+  // w.document.write(`
+  //   <html>
+  //     <head><title>${filename}</title></head>
+  //     <body style="margin:0; display:flex; justify-content:center; align-items:center; height:100vh;">
+  //       <img src="${dataUrl}" style="max-width:100%; max-height:100%;" />
+  //       <script>
+  //         window.onload = function(){ setTimeout(()=>{ window.print(); }, 250); };
+  //       </script>
+  //     </body>
+  //   </html>
+  // `);
+  // w.document.close();
+  // return { printed: true };
 }
 
 export function downloadSticker(dataUrl, filename = "sticker.png") {

@@ -446,6 +446,23 @@ export default function InventoraClient() {
           </div>
         </details>
       </div>
+
+      <footer className="rounded-lg shadow-sm pt-10 px-2 sm:px-4">
+          <div className="w-full max-w-screen-xl mx-auto md:py-8">
+              <div className="sm:flex sm:items-center sm:justify-between">
+                  <a href="https://dabecart.github.io/inventora/" className="flex items-center mb-4 sm:mb-0 space-x-3 rtl:space-x-reverse">
+                      <h1 className="text-2xl font-bold" title="Manage your inventory cleanly">Inventora</h1>
+                  </a>
+                  <ul className="flex flex-wrap items-center text-sm font-medium sm:mb-0 text-gray-400">
+                      <li>
+                          <a href="https://github.com/dabecart/inventora" className="hover:underline">See this project on GitHub!</a>
+                      </li>
+                  </ul>
+              </div>
+              <hr className="my-4 border-gray-200 sm:mx-auto dark:border-gray-700 lg:my-6" />
+              <span className="block text-sm sm:text-center text-gray-400">Inventora, by <a href="https://github.com/dabecart" className="hover:underline">@dabecart</a>.</span>
+          </div>
+      </footer>
     </div>
   );
 }

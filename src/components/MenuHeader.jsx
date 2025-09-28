@@ -36,7 +36,7 @@ export default function MenuHeader({ signedIn, userId, status, manualPush, local
         {(localPendingActions.current || []).length === 0 ? (
           <IconButton
             title="Nothing to push"
-            className="bg-gray-600 text-white"
+            className="bg-gray-700 text-white"
             disabled
           >
             <UploadCloud />
@@ -78,18 +78,16 @@ export default function MenuHeader({ signedIn, userId, status, manualPush, local
               <div className="p-3 text-sm text-gray-700">
                 {signedIn ? (
                   <>
-                    <p className="font-medium truncate">
-                      User: {userId || "(anonymous)"}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Status: {status}
-                    </p>
+                    <p className="font-medium truncate">User:</p>
+                    <p className="font-normal truncate"> {userId || "(anonymous)"}</p>
+                    <p className="text-xs font-medium text-gray-500 mt-2">Status:</p>
+                    <p className="text-xs text-gray-500">{status}</p>
                     <button
                       onClick={() => {
                         handleAuthButton();
                         setMenuOpen(false);
                       }}
-                      className="mt-3 w-full rounded-lg bg-red-600 text-white px-3 py-2 text-sm hover:bg-red-700"
+                      className="mt-4 w-full rounded-lg bg-red-600 text-white px-3 py-2 text-sm hover:bg-red-700"
                     >
                       <div className="flex items-center justify-center gap-2 text-nowrap">
                         <LogOut size={16} />
