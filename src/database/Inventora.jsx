@@ -91,11 +91,14 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
   function handleAuthButton() {
     if (signedIn) {
       signout();
-      setMastersLoaded(false);
     } else {
       signin();
     }
   }
+
+  useEffect(() => {
+    if (!signedIn) setMastersLoaded(false);
+  }, [signedIn]);
 
   // Loads files from Drive at the start.
   useEffect(() => {

@@ -1,4 +1,4 @@
-export default function IconButton({ title, onClick, children, className = '', style = {}, isDisabled = false }) {
+export default function IconButton({ title, onClick, children, className = null, style = {}, isDisabled = false }) {
   return (
     <button 
       onClick={onClick} 

@@ -5,7 +5,7 @@ import IconButton from "./IconButton";
 
 export default function ItemResume({ storageUnits, metaKeys, name, setName, qty, setQty, storageId, setStorageId, meta, setMeta, errors }) {
   return (
-    <div className="flex flex-col sm:flex-row gap-4">
+    <div className="flex flex-col sm:flex-row gap-4 flex-1">
       <div className="w-full">
         <label className="block text-sm text-gray-400 mb-1">Name</label>
         <input value={name} onChange={e => setName(e.target.value)} className={`w-full px-3 py-2 rounded border ${errors.name ? 'border-red-500' : 'border-gray-300'} bg-gray-800`} />

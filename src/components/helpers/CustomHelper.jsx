@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import MenuViews from "../../utils/MenuViews";
 import { Plus } from "lucide-react";
-import { setKeyValue } from "../MetaEditor";
 import ItemResume from "../ItemResume";
+import AnimatedMenuDiv from "../AnimatedMenuDiv";
 
 export default function CustomHelper({ storageUnits = [], metaKeys = [], validationFunction, setMenuName, handleSaveNewItem }) {
   // Template constants.
@@ -19,25 +19,15 @@ export default function CustomHelper({ storageUnits = [], metaKeys = [], validat
   const hasErrors = Object.keys(errors).length > 0;
 
   // Use goToView to change the current view.
-  const {view, goToView, goToPreviousView} = MenuViews("Resume");
-  // True if the current helper is active.
-  const [isActive, setActive] = useState(false);
-  
-  // Full names of every possible view.
   const menuNames = {
     "Resume" : "New custom item",
   }
-
-  // Automatically updates the menu name.
-  useEffect(() => {
-    if(!isActive) return;
-    setMenuName(menuNames[view]);
-  }, [isActive, view]);
-
+  const {view, direction, goToView, goToPreviousView, getCurrentMenuName} = MenuViews("Resume", setMenuName, menuNames);
+  
   // Gets called when the current helper is selected.
   function getJSX() {
     return (
-      <div className="flex flex-col flex-gap-1">
+      <AnimatedMenuDiv keyName="custom-resume" direction={direction}>
         <ItemResume
           storageUnits={storageUnits} 
           metaKeys={metaKeys} 
@@ -51,7 +41,7 @@ export default function CustomHelper({ storageUnits = [], metaKeys = [], validat
           setMeta={setMeta} 
           errors={errors}
         />
-        <div className="flex justify-end gap-2 mt-6">
+        <div className="flex justify-end gap-2 mt-4">
           <button 
             onClick={() => handleSaveNewItem({name, storageId, qty, meta})} 
             disabled={hasErrors}
@@ -59,9 +49,9 @@ export default function CustomHelper({ storageUnits = [], metaKeys = [], validat
               Add item
           </button>
         </div>
-      </div>
+      </AnimatedMenuDiv>
     );
   }
 
-  return [HELPER_ID, HELPER_NAME, HELPER_ICON, getJSX, setActive, goToPreviousView];
+  return [HELPER_ID, HELPER_NAME, HELPER_ICON, getJSX, goToPreviousView, getCurrentMenuName];
 }

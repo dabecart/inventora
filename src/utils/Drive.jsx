@@ -209,7 +209,7 @@ export default function createDriveManager(setStatus) {
   function signout() {
     setAccessToken(null);
     setSignedIn(false);
-    setStatus('Not signed in');
+    setStatus('Logged out. Please, log in again to continue.');
     localStorage.removeItem('accessToken');
   }
 

@@ -20,7 +20,7 @@ import CreateStickerModal from "./components/CreateStickerModal";
 import Spinner from "./components/Spinner";
 
 export default function InventoraClient() {
-  const [status, setStatus] = useState("Not signed in");
+  const [status, setStatus] = useState("Log in to start.");
 
   const [mergeLog, setMergeLog] = useState([]);
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -225,12 +225,8 @@ export default function InventoraClient() {
       {!mastersLoaded && (
         <div className="flex flex-col gap-2 items-center border rounded p-2 text-gray-400 border-gray-400">
           <h2 className="text-lg font-semibold">Welcome to Inventora!</h2>
-          {!signedIn ? (
-            <div>Please log in</div>
-          ) : (<>
-            <Spinner/>
-            <div>{status}</div>
-          </>)}
+          <div>{status}</div>
+          {signedIn && ( <Spinner/> )}
         </div>
       )}
 

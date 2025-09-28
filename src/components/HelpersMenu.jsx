@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
+import AnimatedMenuDiv from "./AnimatedMenuDiv";
 import { XIcon, ChevronLeft} from "lucide-react";
+
+import MenuViews from "../utils/MenuViews";
 
 import FoodHelper from "./helpers/FoodHelper";
 import CustomHelper from "./helpers/CustomHelper";
@@ -10,22 +13,26 @@ export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, v
 
   // Stores the selected helper and its information.
   const [helperID, setHelperId] = useState(null);
-
   // Name at the top of the menu.
   const [menuName, setMenuName] = useState('Create new item');
-  useEffect(() => { helperID === null && setMenuName('Create new item') }, [helperID]);
+  
+  // Used to navigate the different items in the helpers menu.
+  const menuNames = {
+    "main" : 'Create new item' 
+  };
+  const {view, direction, goToView, goToPreviousView} = MenuViews("main", setMenuName, menuNames);
 
   let helpers = {};
   // Add here all the new helpers.
   [FoodHelper, CustomHelper].forEach((helper) => {
-    const [id, name, icon, getJSX, setActive, prevViewFunc] = helper({
-      storageUnits: storageUnits,
-      metaKeys    : metaKeys,
-      validationFunction : validationFunction,
-      setMenuName : setMenuName,
-      handleSaveNewItem : handleSave
+    const [id, name, icon, getJSX, prevViewFunc, getCurrentMenuName] = helper({
+      storageUnits        : storageUnits,
+      metaKeys            : metaKeys,
+      validationFunction  : validationFunction,
+      setMenuName         : setMenuName,
+      handleSaveNewItem   : handleSave
     });
-    helpers[id] = {name, icon, getJSX, setActive, prevViewFunc};
+    helpers[id] = {name, icon, getJSX, prevViewFunc, getCurrentMenuName};
   })
 
   function goBack() {
@@ -33,18 +40,23 @@ export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, v
       // Try to go back on the current helper.
       const canGoBack = helpers[helperID].prevViewFunc();
       if(!canGoBack) {
-        helpers[helperID].setActive(false);
         setHelperId(null);
+        goToPreviousView();
       }
     }else {
-      onClose();
+      // Try to go back on the helpers menu.
+      const canGoBack = goToPreviousView();
+      if(!canGoBack) onClose();
     }
   }
 
   function selectHelperMenu(newHelperID) {
     if(!(newHelperID in helpers)) return;
 
-    helpers[newHelperID].setActive(true);
+    goToView(helpers[newHelperID].name);
+    // Only set the name on the transition from HelpersMenu to Menu. 
+    // The helper will take care of this when it is selected.
+    setMenuName(helpers[newHelperID].getCurrentMenuName())
 
     setHelperId(newHelperID);
   }
@@ -63,7 +75,7 @@ export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, v
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-      <div className="bg-gray-900 rounded-lg p-6 w-full max-w-3xl max-h-full overflow-y-auto overflow-x-hidden">
+      <div className="bg-gray-900 rounded-lg p-6 w-full max-w-3xl max-h-full min-h-[50vh] overflow-y-auto overflow-x-hidden flex flex-col">
         <div className="flex justify-between items-center mb-4">
           {helperID !== null && <button onClick={goBack} className="p-2 rounded-md mr-2"><ChevronLeft /></button>} 
           <h3 className="text-xl font-semibold">{menuName}</h3>
@@ -72,13 +84,7 @@ export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, v
 
         <AnimatePresence mode="wait">
           {helperID === null && (
-            <motion.div
-              key="menu"
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 50 }}
-              transition={{ duration: 0.3 }}
-            >
+            <AnimatedMenuDiv keyName="main" direction={direction}>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 justify-items-center">
                 {Object.entries(helpers).map(([key, value]) => 
                     <button key={key} className={buttonClass} onClick={() => selectHelperMenu(key)}>
@@ -87,19 +93,13 @@ export default function HelpersMenu({ storageUnits, metaKeys, onSave, onClose, v
                     </button>
                 )}
               </div>
-            </motion.div>
+            </AnimatedMenuDiv>
           )}
 
           {helperID !== null && (
-            <motion.div
-              key={helperID}
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 50 }}
-              transition={{ duration: 0.3 }}
-            >
+            <AnimatedMenuDiv keyName={helperID} direction={direction}>
               {helpers[helperID].getJSX()}
-            </motion.div>
+            </AnimatedMenuDiv>
           )}
         </AnimatePresence>
 

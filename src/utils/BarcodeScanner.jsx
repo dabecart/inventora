@@ -4,9 +4,9 @@ import { BrowserMultiFormatReader } from "@zxing/browser";
 import PhotoMetaEditor from "../components/PhotoMetaEditor";
 import FieldError from "../components/FieldError";
 
-export default function BarcodeScanner({ onDetected, formats = ["ean_13", "qr_code"] }) {
+export default function BarcodeScanner({ onDetected, formats = ["ean_13", "qr_code"], className = null }) {
   const videoRef = useRef();
-  const [fallbackMode, setFallbackMode] = useState(false);
+  const [fallbackMode, setFallbackMode] = useState(null);
   const [images, setImages] = useState([]);
   const [notDetected, setNotDetected] = useState(false);
 
@@ -32,6 +32,7 @@ export default function BarcodeScanner({ onDetected, formats = ["ean_13", "qr_co
               }
             } catch {}
             requestAnimationFrame(tick);
+            setFallbackMode(false);
           };
           tick();
         } else {
@@ -42,6 +43,7 @@ export default function BarcodeScanner({ onDetected, formats = ["ean_13", "qr_co
               stop();
             }
           });
+          setFallbackMode(false);
         }
       } catch (e) {
         console.warn("Camera scanning failed:", e);
@@ -83,9 +85,14 @@ export default function BarcodeScanner({ onDetected, formats = ["ean_13", "qr_co
     })();
   }, [images]);
 
-  if (fallbackMode) {
+  // Don't return anything until the camera has been loaded, or it has fallen into fallback.
+  if (fallbackMode === null) {
+    return (<></>)
+  }
+  
+  if(fallbackMode) {
     return (
-      <div>
+      <div className={className}>
         <div className="text-sm text-gray-500 mb-2">{"Snap or upload a photo of the code."}</div>
         <PhotoMetaEditor value={images} onChange={setImages} disableGallery={true} allowMultipleUploads={false}  />
         {notDetected && (
@@ -96,7 +103,7 @@ export default function BarcodeScanner({ onDetected, formats = ["ean_13", "qr_co
   }
 
   return (
-    <div>
+    <div className={className}>
       <video ref={videoRef} className="w-full h-64 bg-black object-cover rounded" muted playsInline />
       <div className="mt-2 text-xs text-gray-500">Point the camera at the product barcode.</div>
     </div>

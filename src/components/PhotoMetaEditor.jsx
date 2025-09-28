@@ -58,7 +58,7 @@ export function resizeAndCompress(input, callback, maxSizeKB = 1024) {
   }
 }
 
-export default function PhotoMetaEditor({ value = [], onChange, className = '', maxSizeKB = 1024, disableGallery = false, allowMultipleUploads = true }) {
+export default function PhotoMetaEditor({ value = [], onChange, className = null, maxSizeKB = 1024, disableGallery = false, allowMultipleUploads = true }) {
   const [items, setItems] = useState(Array.isArray(value) ? value.slice() : []);
   // For full-screen preview
   const [preview, setPreview] = useState(null); 
