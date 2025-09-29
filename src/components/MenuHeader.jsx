@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { LogIn, LogOut, User, UploadCloud } from "lucide-react";
 import IconButton from "./IconButton";
 
-export default function MenuHeader({ signedIn, userId, status, manualPush, localPendingActions, handleAuthButton }) {
+export default function MenuHeader({ signedIn, userId, status, manualPush, localPendingActions, updateAvailable, handleAuthButton }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const menuRef = useRef(null);
@@ -33,20 +33,20 @@ export default function MenuHeader({ signedIn, userId, status, manualPush, local
       {/* Right buttons */}
       <div className="flex items-center gap-2">
         {/* Push button */}
-        {(localPendingActions.current || []).length === 0 ? (
-          <IconButton
-            title="Nothing to push"
-            className="bg-gray-700 text-white"
-            disabled
-          >
-            <UploadCloud />
-          </IconButton>
-        ) : (
+        {(localPendingActions.current || []).length !== 0 && !updateAvailable ? (
           <IconButton
             title="Push pending"
             onClick={manualPush}
             className="bg-green-600 text-white relative animate-pulse-glow"
             style={{"--pulse-glow-color": "34,197,94"}}
+          >
+            <UploadCloud />
+          </IconButton>
+        ) : (
+          <IconButton
+            title="Nothing to push"
+            className="bg-gray-700 text-white"
+            disabled
           >
             <UploadCloud />
           </IconButton>

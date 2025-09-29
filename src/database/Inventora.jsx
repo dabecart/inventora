@@ -3,7 +3,7 @@ import { nowIso, filenameTimeToIso} from '../utils/Utils'
 import DriveManager from '../utils/Drive'
 import InventoraActions, { applyActionsToState } from './InventoraActions'
 
-export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
+export default function Inventora(setStatus, setMergeLog) {
   const INVENTORY_FILENAME = "inventory.json";
   const STORAGE_FILENAME = "storage.json";
   const POLL_INTERVAL_MS = 10 * 1000; // 10 seconds
@@ -38,11 +38,31 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
         };
       }
 
+      case "APPLY_ACTIONS": {
+        const { finalInv, finalStor } = applyActionsToState(action.payload, state.inventory, state.storageUnits);
+        return {
+          inventory: finalInv ?? state.inventory,
+          storageUnits: finalStor ?? state.storageUnits,
+        };
+      }
+
+      case "SET_TIME": {
+        const finalInv = state.inventory;
+        const finalStorage = state.storageUnits;
+        finalInv.time = action.payload;
+        finalStorage.time = action.payload;
+        return {
+          inventory:    finalInv ?? state.inventory,
+          storageUnits: finalStorage ?? state.storageUnits,
+        }
+      }
+
       default: return state;
     }
   }
   const [ inventora, runInventoraAction ] = useReducer(reducerFunc, initialState);
   const [ mastersLoaded, setMastersLoaded ] = useState(false);
+  const [ updateAvailable, setUpdateAvailable ] = useState(false);
 
   // Local pending actions queue (not yet pushed to Drive).
   const localPendingActions = useRef([]);
@@ -118,7 +138,11 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     if (!signedIn || !accessToken || !folderId || !inventora.inventory.time || !inventora.storageUnits.time) return;
 
     async function mergeActionsInterval() {
-      if (pollingIntervalRunning.current) return; // Prevent overlap
+      // Prevent overlap
+      if(pollingIntervalRunning.current) return; 
+      // If there are already new updates on Drive, wait for the user to decide what to do.
+      if(updateAvailable) return;
+      
       pollingIntervalRunning.current = true;
       try {
         // ---- LOCAL MERGE ----
@@ -131,7 +155,7 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
 
         if (newestTimeMs > localTime) {
           if(localPendingActions.current.length == 0) {
-            await mergeLocalActions();
+            await pullRemoteActions();
           } else {
             setUpdateAvailable(true);
           }
@@ -293,31 +317,31 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
       } catch {}
     }
 
-    // Apply actions to initial state
-    const { finalInv, finalStor } = applyActionsToState(actionsToApply, initialInv, initialStor);
     jsonTimes.sort();
     const mergeTime = jsonTimes[jsonTimes.length - 1] || nowIso();
-    finalInv.time = mergeTime;
-    finalStor.time = mergeTime;
+
+    // Apply actions to initial state
+    runInventoraAction({ type: "APPLY_ACTIONS", payload: actionsToApply });
+    runInventoraAction({ type: "SET_TIME",      payload: mergeTime });
 
     // Save to Drive
     if (invFile) {
-      await updateFileMedia(invFile.id, finalInv);
+      await updateFileMedia(invFile.id, inventora.inventory);
     } else {
-      await createFileMultipart(INVENTORY_FILENAME, folderId, finalInv);
+      await createFileMultipart(INVENTORY_FILENAME, folderId, inventora.inventory);
     }
     if (storFile) {
-      await updateFileMedia(storFile.id, finalStor);
+      await updateFileMedia(storFile.id, inventora.storageUnits);
     } else {
-      await createFileMultipart(STORAGE_FILENAME, folderId, finalStor);
+      await createFileMultipart(STORAGE_FILENAME, folderId, inventora.storageUnits);
     }
 
-    runInventoraAction({ type: "SET_INVENTORY", payload: finalInv });
-    runInventoraAction({ type: "SET_STORAGE", payload: finalStor });
     setMergeLog(l => [`Merged ${actionsToApply.length} remote actions into Drive`, ...l]);
   }
 
   // ---------------- Local actions ----------------
+
+  // Sends the pendings actions to Drive as an "actions" file.
   async function pushLocalPending() {
     if (!localPendingActions.current.length) return;
     const actionsFolderId = await ensureActionsFolder();
@@ -327,6 +351,11 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     const filename = `actions_${pushTime.replace(/[:.]/g, "-")}.json`;
     const actionsPayload = { time: pushTime, actions: localPendingActions.current.slice() };
 
+    // The current time of the inventory and storage must be updated to this new pushTime. If not, these
+    // new actions will be applied twice as it will detect that there are new changes on Drive (the ones
+    // it just uploaded).
+    runInventoraAction({ type: "SET_TIME", payload: pushTime });
+
     // Upload actions file
     await createFileMultipart(filename, actionsFolderId, actionsPayload);
 
@@ -334,7 +363,10 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     setMergeLog(l => [`Pushed actions to ${filename}`, ...l]);
   }
 
-  async function mergeLocalActions() {
+  // Takes the current inventory, searches for actions which happened after the current date of the inventory 
+  // and applies them. The date of the final inventory is the oldest of the action files. Does not take into
+  // account the local pending actions.
+  async function pullRemoteActions() {
     const localTime = Math.max(
       new Date(inventora.inventory.time || 0).getTime(),
       new Date(inventora.storageUnits.time || 0).getTime()
@@ -346,13 +378,39 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     const latestActionTime = sortedTimes[sortedTimes.length - 1];
     const mergeTime = latestActionTime ? new Date(latestActionTime).toISOString() : nowIso();
     
-    const { finalInv, finalStor } = applyActionsToState(actions, inventora.inventory, inventora.storageUnits);
-    finalInv.time = mergeTime;
-    finalStor.time = mergeTime;
-    
-    runInventoraAction({ type: "SET_INVENTORY", payload: finalInv });
-    runInventoraAction({ type: "SET_STORAGE", payload: finalStor });
+    runInventoraAction({ type: "APPLY_ACTIONS", payload: actions });
+    runInventoraAction({ type: "SET_TIME",      payload: mergeTime });
     setMergeLog(l => [`Merged ${actions.length} remote actions into local state`, ...l]);
+  }
+
+  // When your current inventory has changes and there are new actions on the actions folder, which
+  // may have been uploaded by another user, there will be a warning. If you select to discard the 
+  // actions and pull, the pending actions get cleared, the inventory gets resetted to the masters
+  // and the new actions on Drive older than the masters time are downloaded and applied.
+  async function discardActionsAndPull() {
+    // Clear pending local actions.
+    localPendingActions.current = [];
+    // Load the masters and apply the remote actions.
+    await loadMasters();
+    await pullRemoteActions();
+    setUpdateAvailable(false);
+    setMergeLog(l => ["Cleared local actions and updated from Drive", ...l]);
+  }
+
+  // When your current inventory has changes and there are new actions on the actions folder, which
+  // may have been uploaded by another user, there will be a warning. If you select to pull and apply 
+  // current actions, the master inventory gets resetted to the masters, the new actions from the Drive
+  // are applied to it and then the pending actions get applied.  
+  async function pullAndApplyCurrentActions() {
+    // Load the masters and apply the remote actions.
+    await loadMasters();
+    await pullRemoteActions();
+
+    // Apply the pending actions.
+    runInventoraAction({ type: "APPLY_ACTIONS", payload: localPendingActions.current });
+
+    setUpdateAvailable(false);
+    setMergeLog(l => ["Downloaded from Drive and applied local actions", ...l]);
   }
 
   return {
@@ -363,6 +421,9 @@ export default function Inventora(setStatus, setMergeLog, setUpdateAvailable) {
     userId,
     inventora,
     localPendingActions,
+    updateAvailable,
+    discardActionsAndPull,
+    pullAndApplyCurrentActions,
     handleAuthButton,
     pushLocalPending,
     mergeRemoteActions,

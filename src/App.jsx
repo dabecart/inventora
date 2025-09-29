@@ -23,7 +23,6 @@ export default function InventoraClient() {
   const [status, setStatus] = useState("Log in to start.");
 
   const [mergeLog, setMergeLog] = useState([]);
-  const [updateAvailable, setUpdateAvailable] = useState(false);
 
   // Create/edit items/storage units.
   const [editingItem, setEditingItem] = useState(null);
@@ -46,6 +45,9 @@ export default function InventoraClient() {
     userId,
     inventora,
     localPendingActions,
+    updateAvailable,
+    discardActionsAndPull,
+    pullAndApplyCurrentActions,
     handleAuthButton,
     pushLocalPending,
     mergeRemoteActions,
@@ -62,7 +64,7 @@ export default function InventoraClient() {
     handleRemoveItemMeta, 
     handleSetStorageMeta, 
     handleRemoveStorageMeta
-  } = Inventora(setStatus, setMergeLog, setUpdateAvailable);
+  } = Inventora(setStatus, setMergeLog);
 
   // ---------------- UI actions: sign-in, push pending, manual merge ----------------
   async function manualPush() {
@@ -198,27 +200,33 @@ export default function InventoraClient() {
   return (
     <div className="p-2 max-w-5xl w-full mx-auto">
 
-      <MenuHeader signedIn={signedIn} userId={userId} status={status} manualPush={manualPush} localPendingActions={localPendingActions} handleAuthButton={handleAuthButton}/>
+      <MenuHeader 
+        signedIn={signedIn} 
+        userId={userId} 
+        status={status} 
+        manualPush={manualPush} 
+        localPendingActions={localPendingActions}
+        updateAvailable={updateAvailable} 
+        handleAuthButton={handleAuthButton}/>
 
       {updateAvailable && (
         <div className="mt-4 p-4 bg-yellow-200 border border-yellow-600 rounded">
           <div className="font-bold text-yellow-800 mb-2">New actions detected!</div>
-          <div className="mb-2 text-yellow-800">There are new actions in the database since your last update. Reload inventory and storage?</div>
-          <button
-            className="px-3 py-1 rounded bg-yellow-600 text-white mr-2"
-            onClick={async () => {
-              // Ask user if they want to keep local pending actions.
-              if (localPendingActions.current.length > 0) {
-                if (!window.confirm("You have unsaved local actions. Do you want to discard them and reload?")) return;
-                localPendingActions.current = [];
-              }
-              await loadMasters();
-              setUpdateAvailable(false);
-              setMergeLog(l => ["Reloaded inventory and storage from Drive", ...l]);
-            }}
-          >
-            Reload Inventory & Storage
-          </button>
+          <div className="mb-2 text-yellow-800">
+            There are new actions in the database since your last update. 
+            You can either merge your pending changes with the database's or discard your changes and download the updates.
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={pullAndApplyCurrentActions} className="px-3 py-1 rounded bg-yellow-600 text-white mr-2"
+            >Update and merge</button>
+
+            <button className="px-3 py-1 rounded bg-yellow-600 text-white mr-2"
+              onClick={async () => {
+                if(!window.confirm("Are you sure you want to discard the pending actions and reload?")) return;
+                discardActionsAndPull();
+              }}>Discard changes and update</button>
+          </div>
         </div>
       )}
 
